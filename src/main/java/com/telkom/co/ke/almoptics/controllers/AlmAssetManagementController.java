@@ -6,7 +6,11 @@ package com.telkom.co.ke.almoptics.controllers;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.telkom.co.ke.almoptics.entities.tbLicense;
+import com.telkom.co.ke.almoptics.entities.tbNode;
+import com.telkom.co.ke.almoptics.entities.tbNodeType;
 import com.telkom.co.ke.almoptics.entities.tb_FinancialReport;
+import com.telkom.co.ke.almoptics.entities.tbUnmappedActiveAsset;
 import com.telkom.co.ke.almoptics.entities.tb_FarReport;
 import com.telkom.co.ke.almoptics.entities.tb_Asset;
 import com.telkom.co.ke.almoptics.entities.tb_Asset_Allocation;
@@ -18,10 +22,11 @@ import com.telkom.co.ke.almoptics.services.AssetService;
 import com.telkom.co.ke.almoptics.services.FinancialReportService;
 import com.telkom.co.ke.almoptics.services.FarReportService;
 import com.telkom.co.ke.almoptics.services.ItemService;
+import com.telkom.co.ke.almoptics.services.LicenseService;
 import com.telkom.co.ke.almoptics.services.MyAsyncService;
-import java.awt.print.Pageable;
-import java.io.IOException;
-import java.io.PrintWriter;
+import com.telkom.co.ke.almoptics.services.NodeTypeService;
+import com.telkom.co.ke.almoptics.services.UnmappedActiveAssetService;
+import com.telkom.co.ke.almoptics.services.tbNodeService;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
@@ -36,24 +41,23 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import javax.servlet.http.HttpServletResponse;
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
+import java.math.BigDecimal;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.time.YearMonth;
+import org.springframework.web.bind.annotation.GetMapping;
 
 /**
  *
@@ -74,7 +78,6 @@ public class AlmAssetManagementController {
 
     private final JdbcTemplate jdbcTemplate;
 
-    // private final tb_dumps_monitorService tb_dumps_monitorServices;
     private final ItemService itemservice;
 
     private MyAsyncService myAsyncService;
@@ -83,246 +86,578 @@ public class AlmAssetManagementController {
 
     private final FarReportService farReportService;
 
+    private final UnmappedActiveAssetService unmappedService;
+
+    private final LicenseService licenseService;
+
+    private final tbNodeService nodeService;
+
+    private final NodeTypeService nodeTypeService;
+
     @Autowired
-    public AlmAssetManagementController(JdbcTemplate jdbcTemplate, FinancialReportService financialReportService, ItemService itemservice, MyAsyncService myAsyncService, AssetAllocationService assetAllocationService, AssetJournalService assetJournalService, AssetService assetService, FarReportService farReportService) {
+    public AlmAssetManagementController(NodeTypeService nodeTypeService, tbNodeService nodeService, LicenseService licenseService, UnmappedActiveAssetService unmappedService, JdbcTemplate jdbcTemplate, FinancialReportService financialReportService, ItemService itemservice, MyAsyncService myAsyncService, AssetAllocationService assetAllocationService, AssetJournalService assetJournalService, AssetService assetService, FarReportService farReportService) {
+        this.nodeTypeService = nodeTypeService;
+        this.nodeService = nodeService;
+        this.licenseService = licenseService;
+        this.unmappedService = unmappedService;
         this.jdbcTemplate = jdbcTemplate;
         this.financialReportService = financialReportService;
         this.assetAllocationService = assetAllocationService;
         this.assetJournalService = assetJournalService;
         this.assetService = assetService;
-        //   this.tb_dumps_monitorServices = tb_dumps_monitorServices;
         this.itemservice = itemservice;
         this.myAsyncService = myAsyncService;
         this.farReportService = farReportService;
-
     }
 
-//    @PostMapping(value = "getFAR", produces = "application/json")
-//    @CrossOrigin(origins = "*", allowedHeaders = "*", maxAge = 3600)
-//    public void getFARKSA(@RequestBody JSONObject assetRequest, HttpServletResponse response) throws IOException {
-//        String status = assetRequest.getAsString("assetId");
-//        this.LOGGER.info("GET ALL ASSETS " + assetRequest);
-//        this.LOGGER.info("Asset ID  " + status);
-//
-//        // Set default page size
-//        int size = 50000; // Number of records per chunk
-//        int page = 1; // Start from the first page
-//
-//        // Count total records
-//        String countSql = "SELECT COUNT(*) FROM tb_FarReport ";
-//        if (!status.equalsIgnoreCase("")) {
-//            countSql += " WHERE assetId = '" + status + "'";
-//        }
-//        int totalRecords = jdbcTemplate.queryForObject(countSql, Integer.class);
-//
-//        // Set response type to JSON
-//        response.setContentType("application/json");
-//        PrintWriter out = response.getWriter();
-//        out.write("["); // Start JSON array
-//
-//        AtomicInteger counter = new AtomicInteger(0);
-//        boolean firstChunk = true;
-//
-//        // Loop through pages until all records are fetched
-//        while (true) {
-//            // Calculate offset for pagination
-//            int offset = (page - 1) * size;
-//
-//            // Prepare SQL query with pagination
-//            String sql = "SELECT recordNo, recordDatetime, book, assetId, quantity, description, creationDate, serialNumber, tagNumber, picStatus, picDate, cipDeliveryDate, linkId, acceptanceNumber, depreciateFlag, cipEu, invoiceNumber, poNumber, poLineNumber, uplLine, transferToNewFar, assetStatus, value, partNumber, vendorName, vendorNumber, mergedCode, costAccount, accumulatedDepreAccount, cipCostAccount, expenseCostCenter, expenseAccount, Life, datePlacedInService, cost, nbv, depreciationAmount, ytdDepreciation, depreciationReserve, salvageValue, category, categoryDescription, locationSegment1, locationSegment2, locationSegment3, locationSegment4, locations, sequenceNumber, createdBy, createdDate, updatedBy, updatedDate, monthlyDepreciationAmt, accumulatedDepreciationAmt, depreciationDate, netCost FROM tb_FarReport ";
-//
-//            if (!status.equalsIgnoreCase("")) {
-//                sql += " WHERE assetId='" + status + "'";
-//            }
-//
-//            sql += " LIMIT " + size + " OFFSET " + offset;
-//
-//            this.LOGGER.info("Executing SQL: " + sql);
-//
-//            // Query the database
-//            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql);
-//
-//            // If no more records, break the loop
-//            if (rows.isEmpty()) {
-//                break;
-//            }
-//
-//            // Write each row to the output
-//            for (Map<String, Object> row : rows) {
-//                if (!firstChunk) {
-//                    out.write(","); // Add comma between JSON objects
-//                }
-//                out.write(new JSONObject(row).toString()); // Convert row to JSON and write to output
-//                firstChunk = false;
-//            }
-//
-//            // Move to the next page
-//            page++;
-//        }
-//
-//        out.write("]"); // End JSON array
-//        out.flush();
-//    }
-    @PostMapping(value = "getFAR", produces = "application/json")
+    //UPLOAD LICENSES WHICH HAVE NOT BEEN DISCOVERED AT NEP
+    @PostMapping(value = "uploadLicenses", produces = "application/json")
     @CrossOrigin(origins = "*", allowedHeaders = "*", maxAge = 3600)
-    public List<Map<String, Object>> getFARKSA(@RequestBody JsonObject assetRequest) {
-        //    JsonObject obj = new JsonParser().parse(req).getAsJsonObject();
-        String status = assetRequest.get("assetId").getAsString();
+    public JSONObject uploadLicenses(@RequestBody String req, HttpServletResponse httpResponse) throws ParseException {
+        JSONObject jsonObjectResponse = new JSONObject();
+        long recordNo = 0;
+        String licenseID = "";
+        String nodeId = "";
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+        LocalDateTime now = LocalDateTime.now();
+        java.util.Date parsedDate = format.parse(now.toString());
+        java.sql.Date newDate = new java.sql.Date(parsedDate.getTime());
+        String ipaddress = getIPAddress();
+        try {
 
-        this.LOGGER.info("GET ALL ASSETS " + assetRequest);
-        this.LOGGER.info("Asset ID  " + status);
+            org.json.JSONArray jsonArray = new org.json.JSONArray(req);
+            for (int i = 0; i < jsonArray.length(); i++) {
+                org.json.JSONObject jsonObject = jsonArray.getJSONObject(i);
+                this.LOGGER.info("RECEIVED LICENSES REQUEST" + req);
+                recordNo = Integer.parseInt(jsonObject.getString("recordNo"));
+                licenseID = jsonObject.getString("licenseId");
+                nodeId = jsonObject.getString("nodeId");
+                JSONObject assetTrack = new JSONObject();
+                if (recordNo == 0) {
+                    if (!licenseID.equalsIgnoreCase("")) {
+                        List<tbLicense> licenseList = this.licenseService.findByLicenseId(licenseID);
+                        if (!licenseList.isEmpty()) {
+                            jsonObjectResponse.put("error", "Error occured, License ID already exist " + licenseID);
+                        } else {
+                            ///check if the node exists in Tb Nodes first , if not create it 
+                            List<tbNode> nodelist = this.nodeService.findByNode(nodeId);
+                            if (nodelist.isEmpty()) {
+                                //Onboard the node here
+                                tbNode ndeNode = new tbNode();
+                                ndeNode.setRecordDateTime(newDate);
+                                ndeNode.setNode(nodeId);
+                                ndeNode.setSiteId(Integer.parseInt(jsonObject.getString("siteId")));
+                                //get node type ID 
+                                tbNodeType nodety = this.nodeTypeService.findByNodeType(jsonObject.getString("nodeType"));
+                                ndeNode.setNodeTypeId(nodety.getId());
+                                nodeService.save(ndeNode);
+                            }
+                            tbLicense license = new tbLicense();
+                            license.setNodeName(jsonObject.getString("nodeId"));
+                            license.setNodeName(jsonObject.getString("nodeType"));
+                            license.setNeSiteName(jsonObject.getString("siteId"));
+                            license.setSiteId(jsonObject.getString("siteId"));
+                            license.setZone(jsonObject.getString("zone"));
+                            license.setLicenseId(jsonObject.getString("licenseId"));
+                            license.setLicenseDetail(jsonObject.getString("licenseDetail"));
+                            license.setAllocated(jsonObject.getInt("allocated"));
+                            license.setUsage(jsonObject.getInt("usage"));
+                            license.setUsagePercentage(jsonObject.getDouble("usagePercentage"));
+                            license.setConfig(jsonObject.getString("config"));
+                            license.setUnit(jsonObject.getString("unit"));
+                            String insertDate = jsonObject.getString("insertDate");
+                            String lastChangeDate = jsonObject.getString("lastChangeDate");
+                            java.util.Date newInsDate = format.parse(insertDate);
+                            java.sql.Date newDateInsertDate = new java.sql.Date(newInsDate.getTime());
+                            license.setInsertDate(newDateInsertDate);
+                            java.util.Date newChDate = format.parse(lastChangeDate);
+                            java.sql.Date newChangedDate = new java.sql.Date(newChDate.getTime());
+                            license.setLastChangeDate(newChangedDate);
+                            Double licenseValue = jsonObject.optDouble("licenseDetailValue", 0.0);
+                            license.setLicenseDetailValue(licenseValue);
+                            license.setTechnology(jsonObject.getString("technology"));
+                            license.setManufacturer(jsonObject.getString("manufacturer"));
+                            license.setCreatedById(jsonObject.getInt("createdById"));
+                            license.setCreatedByName(jsonObject.getString("createdByName").trim());
+                            this.licenseService.save(license);
 
-        int page = assetRequest.has("page") ? assetRequest.get("page").getAsInt() : 1;
-        int size = assetRequest.has("size") ? assetRequest.get("size").getAsInt() : 20000;
+                            assetTrack.put("serialNumber", jsonObject.getString("licenseId"));
+                            assetTrack.put("siteId", jsonObject.getString("siteId"));
+                            assetTrack.put("actionType", "ADD LICENCE ID " + jsonObject.getString("licenseId"));
+                            assetTrack.put("username", jsonObject.getString("createdByName"));
+                            org.json.JSONArray assettrackRequest = new org.json.JSONArray();
+                            assettrackRequest.put(assetTrack);
+                            this.myAsyncService.httpPOST("http://" + ipaddress + ":8080/alm_zain_ksa_financials/addAssetTracking", assettrackRequest.toString());
 
-        page = Math.max(page, 0);
-        size = Math.max(size, 0);
+                        }
+                    }
+                } else {
+                    //UPDATE THE LICESNE  HERE BUT CHECK THE DETAILS AS WELL  
+                    if (!licenseID.equalsIgnoreCase("")) {
+                        //check if record number id 0, if its zero check if the asset id is uniques
+                        List<tbLicense> licenseList = this.licenseService.findByLicenseId(licenseID);
+                        if (licenseList.isEmpty()) {
+                            jsonObjectResponse.put("error", "Error occurred, LIcense ID not found: " + licenseID);
+                        } else {
+                            tbLicense licenseUpdate = licenseList.get(0);
+                            licenseUpdate.setNodeName(jsonObject.getString("nodeId"));
+                            licenseUpdate.setNodeName(jsonObject.getString("nodeType"));
+                            licenseUpdate.setNeSiteName(jsonObject.getString("siteId"));
+                            licenseUpdate.setSiteId(jsonObject.getString("siteId"));
+                            licenseUpdate.setZone(jsonObject.getString("zone"));
+                            licenseUpdate.setLicenseId(jsonObject.getString("licenseId"));
+                            licenseUpdate.setLicenseDetail(jsonObject.getString("licenseDetail"));
+                            licenseUpdate.setAllocated(jsonObject.getInt("allocated"));
+                            licenseUpdate.setUsage(jsonObject.getInt("usage"));
+                            licenseUpdate.setUsagePercentage(jsonObject.getDouble("usagePercentage"));
+                            licenseUpdate.setConfig(jsonObject.getString("config"));
+                            licenseUpdate.setUnit(jsonObject.getString("unit"));
+                            String insertDate = jsonObject.getString("insertDate");
+                            String lastChangeDate = jsonObject.getString("lastChangeDate");
+                            java.util.Date newInsDate = format.parse(insertDate);
+                            java.sql.Date newDateInsertDate = new java.sql.Date(newInsDate.getTime());
+                            licenseUpdate.setInsertDate(newDateInsertDate);
+                            java.util.Date newChDate = format.parse(lastChangeDate);
+                            java.sql.Date newChangedDate = new java.sql.Date(newChDate.getTime());
+                            licenseUpdate.setLastChangeDate(newChangedDate);
+                            Double licenseValue = jsonObject.optDouble("licenseDetailValue", 0.0);
+                            licenseUpdate.setLicenseDetailValue(licenseValue);
+                            licenseUpdate.setTechnology(jsonObject.getString("technology"));
+                            licenseUpdate.setManufacturer(jsonObject.getString("manufacturer"));
+                            this.licenseService.save(licenseUpdate);
 
-        page = Math.max(page, 0);
-        size = Math.max(size, 0);
+                            assetTrack.put("serialNumber", jsonObject.getString("licenseId"));
+                            assetTrack.put("siteId", jsonObject.getString("siteId"));
+                            assetTrack.put("actionType", "EDIT LICENCE ID " + jsonObject.getString("licenseId"));
+                            assetTrack.put("username", jsonObject.getString("createdByName"));
+                            org.json.JSONArray assettrackRequest = new org.json.JSONArray();
+                            assettrackRequest.put(assetTrack);
+                            this.myAsyncService.httpPOST("http://" + ipaddress + ":8080/alm_zain_ksa_financials/addAssetTracking", assettrackRequest.toString());
 
-        String paginationSql = "";
+                        }
 
-        String countSql = "SELECT COUNT(*) FROM tb_FarReport ";
-        if (!status.equalsIgnoreCase("")) {
-            countSql += " WHERE assetId = '" + status + "'";
-        }
-        int totalRecords = jdbcTemplate.queryForObject(countSql, Integer.class);
+                    } else {
+                        jsonObjectResponse.put("errorcode", "Missing License ID detected");
 
-        if (page == 0 && size == 0) {
-            paginationSql = "";
-        } else if (page == 1 && size == 20000) {
-            page = 0;
-            size = 20000;
-            page = Math.max(page, 1); // Ensure page is at least 1 if not 0
-            size = Math.max(size, 1); // Ensure size is at least 1 if not 0
-            int offset = (page - 1) * size;
+                    }
 
-            paginationSql = " LIMIT " + size + " OFFSET " + offset;
+                }
 
-        } else {
-            page = Math.max(page, 1); // Ensure page is at least 1 if not 0
-            size = Math.max(size, 1); // Ensure size is at least 1 if not 0
-            int offset = (page - 1) * size;
-            paginationSql = " LIMIT " + size + " OFFSET " + offset;
-        }
-
-        String sql = "SELECT recordNo, recordDatetime, book, assetId, quantity, description, creationDate, serialNumber, tagNumber, picStatus, picDate, cipDeliveryDate, linkId, acceptanceNumber, depreciateFlag, cipEu, invoiceNumber, poNumber, poLineNumber, uplLine, transferToNewFar, assetStatus, value, partNumber, vendorName, vendorNumber, mergedCode, costAccount, accumulatedDepreAccount, cipCostAccount, expenseCostCenter, expenseAccount, Life, datePlacedInService, cost, nbv, depreciationAmount, ytdDepreciation, depreciationReserve, salvageValue, category, categoryDescription, locationSegment1, locationSegment2, locationSegment3, locationSegment4, locations, sequenceNumber, createdBy, createdDate, updatedBy, updatedDate, monthlyDepreciationAmt, accumulatedDepreciationAmt, depreciationDate, netCost FROM tb_FarReport  ";
-
-        if (!status.equalsIgnoreCase("")) {
-            sql += " WHERE assetId='" + status + "'";
-        }
-
-        String finalSql = sql + paginationSql;
-
-        this.LOGGER.info("Executing SQL: " + finalSql);
-
-        List<Map<String, Object>> result = new ArrayList<>();
-        jdbcTemplate.query(finalSql, rs -> {
-            Map<String, Object> row = new LinkedHashMap<>();
-            for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++) {
-                row.put(rs.getMetaData().getColumnName(i), rs.getObject(i));
             }
-            result.add(row);
-        });
+            if (jsonObjectResponse.containsKey("error")) {
+                jsonObjectResponse.put("responseCode", "1");
+                jsonObjectResponse.put("responseMessage", "Error occured, License ID already exist " + licenseID);
+            }
+            if (jsonObjectResponse.containsKey("errorcode")) {
+                jsonObjectResponse.put("responseCode", "1");
+                jsonObjectResponse.put("responseMessage", "Error occured, Missing License ID detected");
+            } else {
+                jsonObjectResponse.put("responseCode", "0");
+                jsonObjectResponse.put("responseMessage", "License  successfully created/updated ");
+            }
 
-        //this.LOGGER.info("Records Fetched: " + result.size());
-        //Map<String, Object> response = new HashMap<>();
-//        response.put("data", result);
-//        response.put("totalRecords", totalRecords);
-//        response.put("currentPage", page);
-//        response.put("pageSize", size);
-//        response.put("totalPages", (int) Math.ceil((double) totalRecords / size));
-        // Add an incremental column programmatically
-//        AtomicInteger counter = new AtomicInteger(1);
-//        result.forEach(row -> row.put("recordNo", counter.getAndIncrement()));
-        return result;
+        } catch (ParseException ex) {
+            jsonObjectResponse.put("responseCode", "1");
+            jsonObjectResponse.put("responseMessage", ex.getMessage());
+            this.LOGGER.info("EXCEPTION::" + ex.getMessage());
+        }
+        return jsonObjectResponse;
     }
 
-    @RequestMapping({"getFAR1"})
-    public JSONArray getFARKSA1(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse, @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+    // NEW ENDPOINT FOR GETTING ALL LICENSES
+    @GetMapping("/getLicenses")
+    public JSONArray getLicenses(HttpServletResponse httpResponse) {
         JSONArray jsonObjectResponse = new JSONArray();
         try {
-            this.LOGGER.info("GET ALL ASSETS " + assetRequest);
-            String assetId = assetRequest.getAsString("assetId");
+            this.LOGGER.info("GET ALL LICENSES");
 
-            List<tb_FarReport> allReport = this.farReportService.findAll();
-            if (!assetId.equalsIgnoreCase("") || !assetId.isEmpty()) {
-                allReport = this.farReportService.findByAssetId(assetId);
-            } else {
+            List<tbLicense> allLicenses = this.licenseService.findAll();
 
-            }
+            allLicenses.stream().map(license -> {
+                JSONObject licenseJson = new JSONObject();
+                licenseJson.put("recordNo", license.getId());
+                //licenseJson.put("nodeId", license.getNodeId());
+                licenseJson.put("nodeName", license.getNodeName());
+                licenseJson.put("nodeType", license.getNodeType());
+                licenseJson.put("neSiteName", license.getNeSiteName());
+                licenseJson.put("siteId", license.getSiteId());
+                licenseJson.put("zone", license.getZone());
+                licenseJson.put("licenseId", license.getLicenseId());
+                licenseJson.put("licenseDetail", license.getLicenseDetail());
+                licenseJson.put("allocated", license.getAllocated());
+                licenseJson.put("usage", license.getUsage());
+                licenseJson.put("usagePercentage", license.getUsagePercentage());
+                licenseJson.put("config", license.getConfig());
+                licenseJson.put("unit", license.getUnit());
+                //   licenseJson.put("expiryDate", license.getExpiryDate());
+                licenseJson.put("insertDate", license.getInsertDate());
+                licenseJson.put("lastChangeDate", license.getLastChangeDate());
+                licenseJson.put("licenseDetailValue", license.getLicenseDetailValue());
+                licenseJson.put("technology", license.getTechnology());
+                licenseJson.put("manufacturer", license.getManufacturer());
+                licenseJson.put("isMapped", license.getIsMapped());
+                licenseJson.put("createdById", license.getCreatedById());
+                licenseJson.put("createdByName", license.getCreatedByName());
+                return licenseJson;
+            }).forEachOrdered(licenseJson -> {
+                jsonObjectResponse.add(licenseJson);
+            });
+        } catch (Exception ex) {
+            this.LOGGER.error("Exception in getLicenses: " + ex.getMessage(), ex);
+        }
+        return jsonObjectResponse;
+    }
+
+    public String getIPAddress() {
+        String ipAddress = "";
+        try {
+            InetAddress inetAddress = InetAddress.getLocalHost();
+
+            ipAddress = inetAddress.getHostAddress();
+            System.out.println("ipAddress " + ipAddress);
+
+        } catch (UnknownHostException ex) {
+            this.LOGGER.info("EXCEPTION::" + ex.getMessage());
+        }
+        return ipAddress;
+    }
+
+    //NEW END POINT FOR GETTING UNMAPPED ACTIVE ASSETS 
+    @GetMapping({"getUnmappedActiveAssets"})
+    public JSONArray getUnmappedActiveAssets(HttpServletResponse httpResponse) {
+        JSONArray jsonObjectResponse = new JSONArray();
+        try {
+            this.LOGGER.info("GET ALL UNMAPPED ASSETS ");
+            // String status = assetRequest.getAsString("assetId");
+            List<tbUnmappedActiveAsset> allReport = this.unmappedService.findAll();
+//            if (!status.equalsIgnoreCase("") || !status.isEmpty()) {
+//                allReport = this.financialReportService.findByAssetId(status);
+//            } else {
+//
+//            }
             for (int i = 0; i < allReport.size(); i++) {
                 JSONObject singleAssetObj = new JSONObject();
-                tb_FarReport financeRPT = allReport.get(i);
-                singleAssetObj.put("recordNo", financeRPT.getRecordNo());
-                singleAssetObj.put("recordDatetime", financeRPT.getRecordDatetime());
-                singleAssetObj.put("book", financeRPT.getBook());
-                singleAssetObj.put("assetId", financeRPT.getAssetId());
-                singleAssetObj.put("quantity", financeRPT.getQuantity());
-                singleAssetObj.put("description", financeRPT.getDescription());
-                singleAssetObj.put("creationDate", financeRPT.getCreationDate());
-                singleAssetObj.put("serialNumber", financeRPT.getSerialNumber());
-                singleAssetObj.put("tagNumber", financeRPT.getTagNumber());
-                singleAssetObj.put("picStatus", financeRPT.getPicStatus());
-                singleAssetObj.put("picDate", financeRPT.getPicDate());
-                singleAssetObj.put("cipDeliveryDate", financeRPT.getCipDeliveryDate());
-                singleAssetObj.put("linkId", financeRPT.getLinkId());
-                singleAssetObj.put("acceptanceNumber", financeRPT.getAcceptanceNumber());
-                singleAssetObj.put("depreciateFlag", financeRPT.getDepreciateFlag());
-                singleAssetObj.put("cipEu", financeRPT.getCipEu());
-                singleAssetObj.put("invoiceNumber", financeRPT.getInvoiceNumber());
-                singleAssetObj.put("poNumber", financeRPT.getPoNumber());
-                singleAssetObj.put("poLineNumber", financeRPT.getPoLineNumber());
-                singleAssetObj.put("uplLine", financeRPT.getUplLine());
-                singleAssetObj.put("transferToNewFar", financeRPT.getTransferToNewFar());
-                singleAssetObj.put("assetStatus", financeRPT.getAssetStatus());
-                singleAssetObj.put("value", financeRPT.getValue());
-                singleAssetObj.put("partNumber", financeRPT.getPartNumber());
-                singleAssetObj.put("vendorName", financeRPT.getVendorName());
-                singleAssetObj.put("vendorNumber", financeRPT.getVendorNumber());
-                singleAssetObj.put("mergedCode", financeRPT.getMergedCode());
-                singleAssetObj.put("costAccount", financeRPT.getCostAccount());
-                singleAssetObj.put("accumulatedDepreAccount", financeRPT.getAccumulatedDepreAccount());
-                singleAssetObj.put("cipCostAccount", financeRPT.getCipCostAccount());
-                singleAssetObj.put("expenseCostCenter", financeRPT.getExpenseCostCenter());
-                singleAssetObj.put("expenseAccount", financeRPT.getExpenseAccount());
-                singleAssetObj.put("life", financeRPT.getLife());
-                singleAssetObj.put("datePlacedInService", financeRPT.getDatePlacedInService());
-                singleAssetObj.put("cost", financeRPT.getCost());
-                singleAssetObj.put("nbv", financeRPT.getNbv());
-                singleAssetObj.put("depreciationAmount", financeRPT.getDepreciationAmount());
-                singleAssetObj.put("ytdDepreciation", financeRPT.getYtdDepreciation());
-                singleAssetObj.put("depreciationReserve", financeRPT.getDepreciationReserve());
-                singleAssetObj.put("salvageValue", financeRPT.getSalvageValue());
-                singleAssetObj.put("category", financeRPT.getCategory());
-                singleAssetObj.put("categoryDescription", financeRPT.getCategoryDescription());
-                singleAssetObj.put("locationSegment1", financeRPT.getLocationSegment1());
-                singleAssetObj.put("locationSegment1", financeRPT.getLocationSegment1());
-                singleAssetObj.put("locationSegment2", financeRPT.getLocationSegment2());
-                singleAssetObj.put("locationSegment3", financeRPT.getLocationSegment3());
-                singleAssetObj.put("locationSegment4", financeRPT.getLocationSegment4());
-                singleAssetObj.put("locations", financeRPT.getLocations());
-                singleAssetObj.put("sequenceNumber", financeRPT.getSequenceNumber());
-                // Add null check for monthlyDepreciationAmt
-                singleAssetObj.put("monthlyDepreciationAmt", financeRPT.getMonthlyDepreciationAmt() != null ? financeRPT.getMonthlyDepreciationAmt() : 0.0);
-                singleAssetObj.put("accumulatedDepreciationAmt", financeRPT.getAccumulatedDepreciationAmt() != null ? financeRPT.getAccumulatedDepreciationAmt() : 0.0);
-                singleAssetObj.put("netCost", financeRPT.getNetCost() != null ? financeRPT.getNetCost() : 0.0);
+                tbUnmappedActiveAsset financeRPT = allReport.get(i);
 
-                //   //singleAssetObj.put("monthlyDepreciationAmt", financeRPT.getMonthlyDepreciationAmt());
-                //singleAssetObj.put("accumulatedDepreciationAmt", financeRPT.getAccumulatedDepreciationAmt());
-                // singleAssetObj.put("approvalStatus", financeRPT.getApprovalStatus());
-                singleAssetObj.put("depreciationDate", financeRPT.getDepreciationDate());
-                singleAssetObj.put("netCost", financeRPT.getNetCost());
+                singleAssetObj.put("recordNo", financeRPT.getRecordNo());
+                singleAssetObj.put("recordDatetime", financeRPT.getRecordDateTime());
+                singleAssetObj.put("nodeName", financeRPT.getNodeName());
+                singleAssetObj.put("assetName", financeRPT.getAssetName());
+                singleAssetObj.put("assetType", financeRPT.getAssetType());
+                singleAssetObj.put("nodeType", financeRPT.getNodeType());
+                singleAssetObj.put("siteId", financeRPT.getSiteId());
+                singleAssetObj.put("manufacturer", financeRPT.getManufacturer());
+                singleAssetObj.put("model", financeRPT.getModel());
+                singleAssetObj.put("partNumber", financeRPT.getPartNumber());
+                singleAssetObj.put("serialNumber", financeRPT.getSerialNumber());
+                singleAssetObj.put("description", financeRPT.getDescription());
+                singleAssetObj.put("manufacturingDate", financeRPT.getManufacturingDate());
+                singleAssetObj.put("installationDate", financeRPT.getInstallationDate());
+                singleAssetObj.put("assetUpdateDate", financeRPT.getAssetUpdateDate());
+                singleAssetObj.put("warrantly", financeRPT.getWarrantly());
+
                 jsonObjectResponse.add(singleAssetObj);
             }
-            //this.LOGGER.info("GET ALL ASSETS RESPONSE  " + jsonObjectResponse.toJSONString());
         } catch (NumberFormatException ex) {
             this.LOGGER.info("EXCEPTION::" + ex.getMessage());
             return jsonObjectResponse;
         }
         return jsonObjectResponse;
+    }
+
+    //WITH AS AT DATE 
+//    @PostMapping(value = "getFAR", produces = "application/json")
+//    @CrossOrigin(origins = "*", allowedHeaders = "*", maxAge = 3600)
+//    public Map<String, Object> getFARKSA(@RequestBody JSONObject assetRequest) {
+//        String status = assetRequest.getAsString("assetId");
+//        String columnName = assetRequest.containsKey("columnName") ? assetRequest.getAsString("columnName") : "";
+//        String searchQuery = assetRequest.containsKey("searchQuery") ? assetRequest.getAsString("searchQuery") : "";
+//        String asAtDate = assetRequest.containsKey("asAtDate") ? assetRequest.getAsString("asAtDate") : null;
+//
+//        Map<String, Object> response = new HashMap<>();
+//
+//        this.LOGGER.info("GET ALL ASSETS " + assetRequest);
+//        this.LOGGER.info("Asset ID  " + status);
+//
+//        int page = Math.max(assetRequest.containsKey("page") ? assetRequest.getAsNumber("page").intValue() : 1, 1);
+//        int size = Math.max(assetRequest.containsKey("size") ? assetRequest.getAsNumber("size").intValue() : 100, 1);
+//
+//        // Compute the last month of the previous month from asAtDate
+//        String lastMonthDate = getLastMonthDate(asAtDate);
+//
+//        String whereClause = buildWhereClause(status, columnName, searchQuery, lastMonthDate);
+//        List<Object> params = new ArrayList<>();
+//
+//        if (!status.isEmpty()) {
+//            params.add(status);
+//        }
+//        if (!columnName.isEmpty() && !searchQuery.isEmpty() && !columnName.equalsIgnoreCase("recordDatetime")) {
+//            params.add("%" + searchQuery + "%");
+//        }
+//        if (asAtDate != null) {
+//            params.add(lastMonthDate);
+//
+//            String countSql = "SELECT COUNT(*) FROM tb_FarReport f "
+//                    + "LEFT JOIN tb_Asset_Depreciation d ON f.assetId = d.assetCode "
+//                    + whereClause;
+//            int totalRecords = jdbcTemplate.queryForObject(countSql, Integer.class, params.toArray());
+//
+//            // Compute aggregated values with proper date filtering
+//            BigDecimal filteredCost = getAggregateValue("SUM(f.cost)", whereClause, params);
+//            BigDecimal filteredNBV = getAggregateValue("SUM(COALESCE(d.assetBookValue, 0))", whereClause, params);
+//            BigDecimal filteredDepreciation = getAggregateValue("SUM(COALESCE(d.accumulatedDepreciation, 0))", whereClause, params);
+//
+//            // Compute total values without filtering
+//            BigDecimal totalCost = getAggregateValue("SUM(f.cost)", "", new ArrayList<>());
+//            BigDecimal totalNBV = getAggregateValue("SUM(COALESCE(d.assetBookValue, 0))", "", new ArrayList<>());
+//            BigDecimal totalDepreciation = getAggregateValue("SUM(COALESCE(d.accumulatedDepreciation, 0))", "", new ArrayList<>());
+//
+//            String paginationSql = buildPaginationSql(page, size);
+//            String sql = "SELECT f.recordNo, f.recordDatetime, f.book, f.assetId, f.quantity, f.description, f.creationDate, "
+//                    + "f.serialNumber, f.tagNumber, f.picStatus, f.picDate, f.cipDeliveryDate, f.linkId, f.acceptanceNumber, "
+//                    + "f.depreciateFlag, f.cipEu, f.invoiceNumber, f.poNumber, f.poLineNumber, f.uplLine, f.transferToNewFar, "
+//                    + "f.assetStatus, f.value, f.partNumber, f.vendorName, f.vendorNumber, f.mergedCode, f.costAccount, "
+//                    + "f.accumulatedDepreAccount, f.cipCostAccount, f.expenseCostCenter, f.expenseAccount, f.Life, "
+//                    + "f.datePlacedInService, f.cost, f.nbv, f.depreciationAmount, f.ytdDepreciation, f.depreciationReserve, "
+//                    + "f.salvageValue, f.category, f.categoryDescription, f.locationSegment1, f.locationSegment2, "
+//                    + "f.locationSegment3, f.locationSegment4, f.locations, f.sequenceNumber, f.createdBy, f.createdDate, "
+//                    + "f.updatedBy, f.updatedDate, f.monthlyDepreciationAmt, f.depreciationDate, "
+//                    + "f.netCost,f.statusFlag,f.changedBy,f.financialApproval,f.changedDate, f.nodeType, f.inventoryStatus, "
+//                    + "(SELECT (MAX(d.assetBookValue)) FROM tb_Asset_Depreciation d WHERE d.assetCode = f.assetId AND d.depreciationDate = ? LIMIT 1) AS assetBookValue, "
+//                    + "(SELECT (MAX(d.accumulatedDepreciation)) FROM tb_Asset_Depreciation d WHERE d.assetCode = f.assetId AND d.depreciationDate = ? LIMIT 1) AS accumulatedDepreciation "
+//                    + "FROM tb_FarReport f "
+//                    + whereClause + paginationSql;
+//
+//            params.add(lastMonthDate);
+//            params.add(lastMonthDate);
+//
+//            this.LOGGER.info("Executing SQL: " + sql);
+//
+//            List<Map<String, Object>> result = new ArrayList<>();
+//            jdbcTemplate.query(sql, rs -> {
+//                Map<String, Object> row = new LinkedHashMap<>();
+//                for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++) {
+//                    row.put(rs.getMetaData().getColumnName(i), rs.getObject(i));
+//                }
+//                result.add(row);
+//            }, params.toArray());
+//
+//            response.put("data", result);
+//            response.put("totalRecords", totalRecords);
+//            response.put("currentPage", page);
+//            response.put("pageSize", size);
+//            response.put("totalCost", totalCost);
+//            response.put("totalNBV", totalNBV);
+//            response.put("totalDepreciation", totalDepreciation);
+//            response.put("filteredCost", filteredCost);
+//            response.put("filteredNBV", filteredNBV);
+//            response.put("filteredDepreciation", filteredDepreciation);
+//            response.put("totalPages", (int) Math.ceil((double) totalRecords / size));
+//
+//        } else {
+//            String countSql = "SELECT COUNT(*) FROM tb_FarReport " + whereClause;
+//
+//        this.LOGGER.info("TOTAL  SQL: " + countSql);
+//        int totalRecords = jdbcTemplate.queryForObject(countSql, Integer.class, params.toArray());
+//
+//        // Calculate filtered costs and other aggregates
+//        BigDecimal filteredCost = getAggregateValue1("SUM(cost)", whereClause, params);
+//        BigDecimal filteredNBV = getAggregateValue1("SUM(netCost)", whereClause, params);
+//        BigDecimal filteredDepreciation = getAggregateValue1("SUM(accumulatedDepreciationAmt)", whereClause, params);
+//
+//        // Calculate total costs and other aggregates
+//        BigDecimal totalCost = getAggregateValue1("SUM(cost)", "", new ArrayList<>());
+//        BigDecimal totalNBV = getAggregateValue1("SUM(netCost)", "", new ArrayList<>());
+//        BigDecimal totalDepreciation = getAggregateValue1("SUM(accumulatedDepreciationAmt)", "", new ArrayList<>());
+//
+//        String paginationSql = buildPaginationSql1(page, size);
+//        String sql = "SELECT recordNo, recordDatetime, book, assetId, quantity, description, creationDate, serialNumber, "
+//                + "tagNumber, picStatus, picDate, cipDeliveryDate, linkId, acceptanceNumber, depreciateFlag, "
+//                + "cipEu, invoiceNumber, poNumber, poLineNumber, uplLine, transferToNewFar, assetStatus, value, "
+//                + "partNumber, vendorName, vendorNumber, mergedCode, costAccount, accumulatedDepreAccount, "
+//                + "cipCostAccount, expenseCostCenter, expenseAccount, Life, datePlacedInService, cost, nbv, "
+//                + "depreciationAmount, ytdDepreciation, depreciationReserve, salvageValue, category, categoryDescription, "
+//                + "locationSegment1, locationSegment2, locationSegment3, locationSegment4, locations, sequenceNumber, "
+//                + "createdBy, createdDate, updatedBy, updatedDate, monthlyDepreciationAmt, accumulatedDepreciationAmt, "
+//                + "depreciationDate, netCost FROM tb_FarReport " + whereClause + paginationSql;
+//
+//        this.LOGGER.info("Executing SQL: " + sql);
+//
+//        List<Map<String, Object>> result = new ArrayList<>();
+//        jdbcTemplate.query(sql, rs -> {
+//            Map<String, Object> row = new LinkedHashMap<>();
+//            for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++) {
+//                row.put(rs.getMetaData().getColumnName(i), rs.getObject(i));
+//            }
+//            result.add(row);
+//        }, params.toArray());
+//
+//        response.put("data", result);
+//        response.put("totalRecords", totalRecords);
+//        response.put("currentPage", page);
+//        response.put("pageSize", size);
+//        response.put("totalCost", totalCost);
+//        response.put("totalNBV", totalNBV);
+//        response.put("totalDepreciation", totalDepreciation);
+//        response.put("filteredCost", filteredCost);
+//        response.put("filteredNBV", filteredNBV);
+//        response.put("filteredDepreciation", filteredDepreciation);
+//        response.put("totalPages", (int) Math.ceil((double) totalRecords / size));
+//
+//        }
+//
+//        // Count total records
+//        return response;
+//    }
+//
+//    private String buildWhereClause(String status, String columnName, String searchQuery, String asAtDate) {
+//        StringBuilder whereClause = new StringBuilder(" WHERE 1=1 ");
+//
+//        if (!status.isEmpty()) {
+//            whereClause.append(" AND f.assetId = ? ");
+//        }
+//
+//        if (!columnName.isEmpty() && !searchQuery.isEmpty() && !columnName.equalsIgnoreCase("recordDatetime")) {
+//            whereClause.append(" AND f.").append(columnName.toLowerCase()).append(" LIKE ? ");
+//        }
+//
+//        if (asAtDate != null) {
+//            whereClause.append(" AND d.depreciationDate = ? ");
+//        }
+//
+//        return whereClause.toString();
+//    }
+//
+//    private BigDecimal getAggregateValue(String aggregateFunction, String whereClause, List<Object> params) {
+//        String sql = "SELECT " + aggregateFunction + " FROM tb_FarReport f "
+//                + "LEFT JOIN tb_Asset_Depreciation d ON f.assetId = d.assetCode "
+//                + whereClause;
+//        return jdbcTemplate.queryForObject(sql, BigDecimal.class, params.toArray());
+//    }
+//
+//    private String buildPaginationSql(int page, int size) {
+//        int offset = (page - 1) * size;
+//        return " LIMIT " + size + " OFFSET " + offset;
+//    }
+//
+//    private String getLastMonthDate(String asAtDate) {
+//        if (asAtDate == null || asAtDate.isEmpty()) {
+//            return null;
+//        }
+//        LocalDate inputDate = LocalDate.parse(asAtDate);
+//        YearMonth previousMonth = YearMonth.from(inputDate).minusMonths(1);
+//        LocalDate lastDayOfPreviousMonth = previousMonth.atEndOfMonth();
+//        return lastDayOfPreviousMonth.toString();
+//    }
+
+    @PostMapping(value = "getFAR", produces = "application/json")
+    @CrossOrigin(origins = "*", allowedHeaders = "*", maxAge = 3600)
+    public Map<String, Object> getFARKSA(@RequestBody JSONObject assetRequest) {
+        String status = assetRequest.getAsString("assetId");
+        String columnName = assetRequest.containsKey("columnName") ? assetRequest.getAsString("columnName") : "";
+        String searchQuery = assetRequest.containsKey("searchQuery") ? assetRequest.getAsString("searchQuery") : "";
+        String dateFrom = assetRequest.containsKey("dateFrom") ? assetRequest.getAsString("dateFrom") : null;
+        String dateTo = assetRequest.containsKey("dateTo") ? assetRequest.getAsString("dateTo") : null;
+
+        this.LOGGER.info("GET ALL ASSETS " + assetRequest);
+        this.LOGGER.info("Asset ID  " + status);
+
+        int page = Math.max(assetRequest.containsKey("page") ? assetRequest.getAsNumber("page").intValue() : 1, 1);
+        int size = Math.max(assetRequest.containsKey("size") ? assetRequest.getAsNumber("size").intValue() : 500, 1);
+
+        String whereClause = buildWhereClause1(status, columnName, searchQuery, dateFrom, dateTo);
+        List<Object> params = new ArrayList<>();
+
+        // Add parameters based on the where clause
+        if (!status.equalsIgnoreCase("")) {
+            params.add(status);
+        }
+        if (!columnName.equalsIgnoreCase("") && !searchQuery.equalsIgnoreCase("") && !columnName.equalsIgnoreCase("recordDatetime")) {
+            params.add("%" + searchQuery + "%");
+        }
+        if (dateFrom != null && !dateFrom.isEmpty()) {
+            params.add(dateFrom);
+        }
+        if (dateTo != null && !dateTo.isEmpty()) {
+            params.add(dateTo);
+        }
+
+        String countSql = "SELECT COUNT(*) FROM tb_FarReport " + whereClause;
+
+        this.LOGGER.info("TOTAL  SQL: " + countSql);
+        int totalRecords = jdbcTemplate.queryForObject(countSql, Integer.class, params.toArray());
+
+        // Calculate filtered costs and other aggregates
+        BigDecimal filteredCost = getAggregateValue1("SUM(cost)", whereClause, params);
+        BigDecimal filteredNBV = getAggregateValue1("SUM(netCost)", whereClause, params);
+        BigDecimal filteredDepreciation = getAggregateValue1("SUM(accumulatedDepreciationAmt)", whereClause, params);
+
+        // Calculate total costs and other aggregates
+        BigDecimal totalCost = getAggregateValue1("SUM(cost)", "", new ArrayList<>());
+        BigDecimal totalNBV = getAggregateValue1("SUM(netCost)", "", new ArrayList<>());
+        BigDecimal totalDepreciation = getAggregateValue1("SUM(accumulatedDepreciationAmt)", "", new ArrayList<>());
+
+        String paginationSql = buildPaginationSql1(page, size);
+        String sql = "SELECT recordNo, recordDatetime, book, assetId, quantity, description, creationDate, serialNumber, "
+                + "tagNumber, picStatus, picDate, cipDeliveryDate, linkId, acceptanceNumber, depreciateFlag, "
+                + "cipEu, invoiceNumber, poNumber, poLineNumber, uplLine, transferToNewFar, assetStatus, value, "
+                + "partNumber, vendorName, vendorNumber, mergedCode, costAccount, accumulatedDepreAccount, "
+                + "cipCostAccount, expenseCostCenter, expenseAccount, Life, datePlacedInService, cost, nbv, "
+                + "depreciationAmount, ytdDepreciation, depreciationReserve, salvageValue, category, categoryDescription, "
+                + "locationSegment1, locationSegment2, locationSegment3, locationSegment4, locations, sequenceNumber, "
+                + "createdBy, createdDate, updatedBy, updatedDate, monthlyDepreciationAmt, accumulatedDepreciationAmt, "
+                + "depreciationDate, netCost FROM tb_FarReport " + whereClause + paginationSql;
+
+        this.LOGGER.info("Executing SQL: " + sql);
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        jdbcTemplate.query(sql, rs -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            for (int i = 1; i <= rs.getMetaData().getColumnCount(); i++) {
+                row.put(rs.getMetaData().getColumnName(i), rs.getObject(i));
+            }
+            result.add(row);
+        }, params.toArray());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("data", result);
+        response.put("totalRecords", totalRecords);
+        response.put("currentPage", page);
+        response.put("pageSize", size);
+        response.put("totalCost", totalCost);
+        response.put("totalNBV", totalNBV);
+        response.put("totalDepreciation", totalDepreciation);
+        response.put("filteredCost", filteredCost);
+        response.put("filteredNBV", filteredNBV);
+        response.put("filteredDepreciation", filteredDepreciation);
+        response.put("totalPages", (int) Math.ceil((double) totalRecords / size));
+
+        return response;
+    }
+
+    private String buildWhereClause1(String status, String columnName, String searchQuery, String dateFrom, String dateTo) {
+        StringBuilder whereClause = new StringBuilder(" WHERE 1=1 ");
+
+        if (!status.equalsIgnoreCase("")) {
+            whereClause.append(" AND assetId = ? ");
+        }
+
+        if (!columnName.equalsIgnoreCase("") && !searchQuery.equalsIgnoreCase("") && !columnName.equalsIgnoreCase("recordDatetime")) {
+            whereClause.append(" AND ").append(columnName.toLowerCase()).append(" LIKE ? ");
+        }
+
+      
+        return whereClause.toString();
+    }
+
+    private BigDecimal getAggregateValue1(String aggregateFunction, String whereClause, List<Object> params) {
+        String sql = "SELECT " + aggregateFunction + " FROM tb_FarReport " + whereClause;
+        return jdbcTemplate.queryForObject(sql, BigDecimal.class, params.toArray());
+    }
+
+    private String buildPaginationSql1(int page, int size) {
+        int offset = (page - 1) * size;
+        return " LIMIT " + size + " OFFSET " + offset;
     }
 
     //UPLOAD NEW FAR  REPORT PER KSA FORMART
@@ -419,6 +754,7 @@ public class AlmAssetManagementController {
                             newFinance.setLocationSegment4(jsonObject.getString("locationSegment4"));
                             newFinance.setLocations(jsonObject.getString("locations"));
                             newFinance.setSequenceNumber(jsonObject.getInt("sequenceNumber"));
+                            newFinance.setStatusFlag("New");
                             this.farReportService.save(newFinance);
                         }
                     } else {
@@ -502,8 +838,8 @@ public class AlmAssetManagementController {
                             financeUpdate.setLocationSegment4(jsonObject.getString("locationSegment4"));
                             financeUpdate.setLocations(jsonObject.getString("locations"));
                             financeUpdate.setSequenceNumber(jsonObject.getInt("sequenceNumber"));
+                            financeUpdate.setStatusFlag("Existing");
                             this.farReportService.save(financeUpdate);
-
                         }
 
                     } else {
@@ -535,7 +871,8 @@ public class AlmAssetManagementController {
 
     //UPLOAD FINANCIAL REPORT HERE 
     @RequestMapping({"uploadFR"})
-    public JSONObject uploadFR(@RequestBody String req, HttpServletResponse httpResponse) {
+    public JSONObject uploadFR(@RequestBody String req, HttpServletResponse httpResponse
+    ) {
         JSONObject jsonObjectResponse = new JSONObject();
         long recordNo = 0;
         String assetID = "";
@@ -683,7 +1020,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"getFinancialReport"})
-    public JSONArray getFinancialReport(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONArray getFinancialReport(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONArray jsonObjectResponse = new JSONArray();
         try {
             this.LOGGER.info("GET ALL ASSETS " + assetRequest);
@@ -749,7 +1087,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"assetTransfer"})
-    public JSONObject assetTransfer(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONObject assetTransfer(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONObject jsonObjectResponse = new JSONObject();
         try {
             tb_Asset tbasset = new tb_Asset();
@@ -799,7 +1138,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"getApprovedAssets"})
-    public JSONArray getApprovedAssets(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONArray getApprovedAssets(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONArray jsonObjectResponse = new JSONArray();
         try {
             this.LOGGER.info("GET ASSETS FOR APPROVAL" + assetRequest);
@@ -861,7 +1201,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"getAssetsForApproval"})
-    public JSONArray getAssetsForApproval(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONArray getAssetsForApproval(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONArray jsonObjectResponse = new JSONArray();
         try {
             this.LOGGER.info("GET ASSETS FOR APPROVAL" + assetRequest);
@@ -897,7 +1238,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"approveAssetTransfer"})
-    public JSONObject approveAssetTransfer(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONObject approveAssetTransfer(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONObject jsonObjectResponse = new JSONObject();
         try {
             this.LOGGER.info("GET ASSET TRANSFER APPROVAL REQUESTL" + assetRequest);
@@ -928,7 +1270,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"allocateAsset"})
-    public JSONObject allocateAsset(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONObject allocateAsset(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONObject jsonObjectResponse = new JSONObject();
         tb_Asset_Allocation tb_Asset_Allocation = new tb_Asset_Allocation();
         try {
@@ -957,7 +1300,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"getUnapprovedAllocatedAsset"})
-    public JSONArray getUnapprovedAllocatedAsset(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONArray getUnapprovedAllocatedAsset(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONArray jsonObjectResponse = new JSONArray();
         tb_Asset_Allocation tb_Asset_Allocation = new tb_Asset_Allocation();
         try {
@@ -986,7 +1330,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"approveAssetAllocation"})
-    public JSONObject approveAssetAllocation(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONObject approveAssetAllocation(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONObject jsonObjectResponse = new JSONObject();
         try {
             tb_Asset_Allocation tb_Asset_Allocation;
@@ -1012,7 +1357,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"assetJournal"})
-    public void assetCaptureJournal(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public void assetCaptureJournal(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         tb_Asset_Journal tb_Asset_Journal = new tb_Asset_Journal();
         try {
             this.LOGGER.info("RECIVE ASSETS JOURNAL REQUEST" + assetRequest);
@@ -1032,7 +1378,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"getAssetJournal"})
-    public JSONArray getAssetJournal(HttpServletResponse httpResponse) {
+    public JSONArray getAssetJournal(HttpServletResponse httpResponse
+    ) {
         tb_Asset_Journal tb_Asset_Journal = new tb_Asset_Journal();
         JSONArray resArray = new JSONArray();
         JSONObject resMessage = new JSONObject();
@@ -1057,7 +1404,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"updateWarrantDetails"})
-    public JSONObject updateWarrantDetails(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONObject updateWarrantDetails(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONObject jsonObjectResponse = new JSONObject();
         try {
             String assetCode = assetRequest.getAsString("assetCode");
@@ -1078,7 +1426,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"updateDepreciationDetails"})
-    public JSONObject updateDepreciationDetails(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONObject updateDepreciationDetails(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONObject jsonObjectResponse = new JSONObject();
         try {
             String assetCode = assetRequest.getAsString("assetCode");
@@ -1101,7 +1450,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"getAssetDepreciation"})
-    public JSONObject getAssetDepreciation(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONObject getAssetDepreciation(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONObject resObject = new JSONObject();
         try {
             this.LOGGER.info("RECIVE GET ASSETS JOURNAL REQUEST");
@@ -1144,7 +1494,8 @@ public class AlmAssetManagementController {
     }
 
     @RequestMapping({"assetDisposal"})
-    public JSONObject doAssetDisposal(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+    public JSONObject doAssetDisposal(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse
+    ) {
         JSONObject resObject = new JSONObject();
         try {
             String updatedBy = assetRequest.getAsString("dicommissionedBy");

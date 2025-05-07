@@ -4,8 +4,10 @@
  */
 package com.telkom.co.ke.almoptics.repository;
 
-import com.telkom.co.ke.almoptics.entities.tb_Asset_Depreciation;
+import com.telkom.co.ke.almoptics.entities.tbNode;
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -14,12 +16,13 @@ import org.springframework.stereotype.Repository;
  * @author jgithu
  */
 @Repository
-public interface tb_Asset_DepreciationRepository extends JpaRepository<tb_Asset_Depreciation, Long> {
+public interface tbNodeRepository extends JpaRepository<tbNode, Long> {
 
-    List<tb_Asset_Depreciation> findAll();
+    tbNode findBySerialNumber(String serialNumber);
 
-    tb_Asset_Depreciation findByAssetCode(String paramString);
-    
-      tb_Asset_Depreciation findByAssetCodeAndDepreciationDate (String paramString, String depreciationDate);
+    List<tbNode> findByNode(String paramString);
+
+    @Override
+    Page<tbNode> findAll(Pageable pageable);
 
 }

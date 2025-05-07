@@ -19,5 +19,7 @@ public interface tb_Asset_DepreciationService {
   tb_Asset_Depreciation save(tb_Asset_Depreciation paramtb_Asset_Depreciation);
   
   tb_Asset_Depreciation findByAssetCode(String paramString);
+  
+  tb_Asset_Depreciation findByAssetCodeAndDepreciationDate (String paramString, String depreciationDate);
 }
 

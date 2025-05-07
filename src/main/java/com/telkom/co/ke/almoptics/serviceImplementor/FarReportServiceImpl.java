@@ -7,10 +7,13 @@ package com.telkom.co.ke.almoptics.serviceImplementor;
 import com.telkom.co.ke.almoptics.entities.tb_FarReport;
 import com.telkom.co.ke.almoptics.repository.FarReportRepo;
 import com.telkom.co.ke.almoptics.services.FarReportService;
+//import java.awt.print.Pageable;
 import java.util.List;
 import javax.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Pageable;
 
 /**
  *
@@ -23,17 +26,25 @@ public class FarReportServiceImpl implements FarReportService {
     @Autowired
     private FarReportRepo farRepo;
 
-    public List<tb_FarReport> findAll() {
-        return this.farRepo.findAll();
-
+    @Override
+    public Page<tb_FarReport> findAll(Pageable pageable) {
+        return this.farRepo.findAll(pageable);
     }
 
+    @Override
     public tb_FarReport save(tb_FarReport boards) {
         return (tb_FarReport) this.farRepo.save(boards);
     }
 
+    @Override
     public List<tb_FarReport> findByAssetId(String paramString) {
         return this.farRepo.findByAssetId(paramString);
+
+    }
+
+    @Override
+    public List<tb_FarReport> findByInventoryStatus(String paramString) {
+        return this.farRepo.findByInventoryStatus(paramString);
 
     }
 }

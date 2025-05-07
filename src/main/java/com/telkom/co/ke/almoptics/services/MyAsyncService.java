@@ -70,7 +70,7 @@ public class MyAsyncService {
         responseMap.put("mqStatus", "057");
         responseMap.put("mqStatusDescription", "Not Successful, response code (" + conresponse + ")");
       } 
-    } catch (Exception ex) {
+    } catch (IOException ex) {
       StringWriter sw = new StringWriter();
       ex.printStackTrace(new PrintWriter(sw));
       System.out.println(sw);

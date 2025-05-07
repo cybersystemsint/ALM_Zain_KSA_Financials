@@ -5,7 +5,12 @@
 package com.telkom.co.ke.almoptics.repository;
 
 import com.telkom.co.ke.almoptics.entities.tb_FarReport;
+//import java.awt.print.Pageable;
+
+import org.springframework.data.domain.Pageable;
+
 import java.util.List;
+import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -16,10 +21,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface FarReportRepo extends JpaRepository<tb_FarReport, Long> {
 
-    @Override
-    List<tb_FarReport> findAll();
+    // @Override
+    //List<tb_FarReport> findAll();
+    Page<tb_FarReport> findAll(Pageable pageable);
 
     // tb_FinancialReport findBySerialNumber(String paramString);
     List<tb_FarReport> findByAssetId(String paramString);
+    
+     List<tb_FarReport> findByInventoryStatus(String paramString);
 
 }

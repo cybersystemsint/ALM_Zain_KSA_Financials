@@ -178,6 +178,36 @@ public class tb_FarReport implements Serializable {
     @Column(name = "netCost")
     private Double netCost;
 
+    //new columns 
+    @Column(name = "statusFlag")
+    private String statusFlag;
+
+    @Column(name = "changedBy")
+    private String changedBy;
+
+    @Column(name = "insertedBy")
+    private String insertedBy;
+
+    @Column(name = "financialApproval")
+    private String financialApproval;
+
+    @Column(name = "changedDate")
+    private Date changedDate;
+
+    @Column(name = "nodeType")
+    private String nodeType;
+
+    @Column(name = "inventoryStatus")
+    private String inventoryStatus;
+
+    public String getInventoryStatus() {
+        return inventoryStatus;
+    }
+
+    public void setInventoryStatus(String inventoryStatus) {
+        this.inventoryStatus = inventoryStatus;
+    }
+
     public Double getMonthlyDepreciationAmt() {
         return monthlyDepreciationAmt;
     }
@@ -592,6 +622,54 @@ public class tb_FarReport implements Serializable {
 
     public void setSequenceNumber(Integer sequenceNumber) {
         this.sequenceNumber = sequenceNumber;
+    }
+
+    public String getStatusFlag() {
+        return statusFlag;
+    }
+
+    public void setStatusFlag(String statusFlag) {
+        this.statusFlag = statusFlag;
+    }
+
+    public String getChangedBy() {
+        return changedBy;
+    }
+
+    public void setChangedBy(String changedBy) {
+        this.changedBy = changedBy;
+    }
+
+    public String getInsertedBy() {
+        return insertedBy;
+    }
+
+    public void setInsertedBy(String insertedBy) {
+        this.insertedBy = insertedBy;
+    }
+
+    public String getFinancialApproval() {
+        return financialApproval;
+    }
+
+    public void setFinancialApproval(String financialApproval) {
+        this.financialApproval = financialApproval;
+    }
+
+    public Date getChangedDate() {
+        return changedDate;
+    }
+
+    public void setChangedDate(Date changedDate) {
+        this.changedDate = changedDate;
+    }
+
+    public String getNodeType() {
+        return nodeType;
+    }
+
+    public void setNodeType(String nodeType) {
+        this.nodeType = nodeType;
     }
 
 }
