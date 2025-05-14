@@ -78,7 +78,7 @@ public class InventorySyncingScheduler {
             LOGGER.info("SCHEDULER STARTED FOR SYNCHING FOR DECOMMISSION  ");
             int pageNumber = 0;
             Page<tb_FarReport> page;
-            int pageSize = 2500;
+            int pageSize = 3000;
             do {
                 Pageable pageable1 = PageRequest.of(pageNumber, pageSize);
                 page = farReportService.findAll(pageable1);
@@ -105,12 +105,13 @@ public class InventorySyncingScheduler {
                     return;
                 }
                 tbNode nodes = this.nodeService.findBySerialNumber(serialNumber);
-                tbPassiveInventory passiveInv = this.passiveService.findBySerialNumber(serialNumber);
-                tbHost host = this.hostService.findByHostSerialNumber(serialNumber);
-                tbPrinter printer = this.printerService.findByHostSerialNumber(serialNumber);
-                tbSNMPManagedDevice devices = this.smtpService.findByHostSerialNumber(serialNumber);
-                tbNetworkDevice network = networkDeviceService.findBySerialNumber(serialNumber);
-                tbStorage storage = storageService.findByHostSerialNumber(serialNumber);
+                //WE CAN ONLY CHECK FOR ACTIVE INVENTORY DUE TO THE AVAILABILITY OF SERIAL NUMBERS 
+//                tbPassiveInventory passiveInv = this.passiveService.findBySerialNumber(serialNumber);
+//                tbHost host = this.hostService.findByHostSerialNumber(serialNumber);
+//                tbPrinter printer = this.printerService.findByHostSerialNumber(serialNumber);
+//                tbSNMPManagedDevice devices = this.smtpService.findByHostSerialNumber(serialNumber);
+//                tbNetworkDevice network = networkDeviceService.findBySerialNumber(serialNumber);
+//                tbStorage storage = storageService.findByHostSerialNumber(serialNumber);
                 LocalDate twentyDaysAgo = LocalDate.now().minusDays(21);
 
                 //START BY CHECKING ACTIVE 
@@ -131,97 +132,99 @@ public class InventorySyncingScheduler {
 
                         this.farReportService.save(asset);
                     }
-                } else if (passiveInv != null && passiveInv.getSerialNumber() != null && !passiveInv.getSerialNumber().isEmpty()) {
-                    //CHECK PASSIVE DATA HERE 
-                    Date lastchangedDate = passiveInv.getChangedDate();
-                    if (lastchangedDate != null) {
-                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                        asset.setNodeType("Passive Node");
-                        asset.setInventoryStatus("Passive");
-                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
-                            asset.setStatusFlag("Decommissioned");
-                            asset.setChangedDate(new Date());
-                            asset.setChangedBy("System");
-
-                            LOGGER.info("Passive Asset with serial number " + serialNumber + " has been Decommissioned.");
-                        }
-                        this.farReportService.save(asset);
-                    }
-                } else if (host != null && host.getHostSerialNumber() != null && !host.getHostSerialNumber().isEmpty()) {
-                    Date lastchangedDate = host.getChangedDate();
-                    if (lastchangedDate != null) {
-                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                        asset.setNodeType("Passive Node");
-                        asset.setInventoryStatus("Host");
-                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
-                            asset.setStatusFlag("Decommissioned");
-                            asset.setChangedDate(new Date());
-                            asset.setChangedBy("System");
-
-                            LOGGER.info("Host IT Asset with serial number " + serialNumber + " has been Decommissioned.");
-                        }
-                        this.farReportService.save(asset);
-                    }
-                } else if (printer != null && printer.getHostSerialNumber() != null && !printer.getHostSerialNumber().isEmpty()) {
-
-                    Date lastchangedDate = printer.getChangedDate();
-                    if (lastchangedDate != null) {
-                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                        asset.setNodeType("Passive Node");
-                        asset.setInventoryStatus("Printer");
-                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
-                            asset.setStatusFlag("Decommissioned");
-                            asset.setChangedDate(new Date());
-                            asset.setChangedBy("System");
-
-                            LOGGER.info("Printer IT Asset with serial number " + serialNumber + " has been Decommissioned.");
-                        }
-                        this.farReportService.save(asset);
-                    }
-                } else if (devices != null && devices.getHostSerialNumber() != null && !devices.getHostSerialNumber().isEmpty()) {
-                    Date lastchangedDate = devices.getChangedDate();
-                    if (lastchangedDate != null) {
-                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                        asset.setNodeType("Passive Node");
-                        asset.setInventoryStatus("SNMPManagedDevice");
-                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
-                            asset.setStatusFlag("Decommissioned");
-                            asset.setChangedDate(new Date());
-                            asset.setChangedBy("System");
-                            LOGGER.info("Device Asset with serial number " + serialNumber + " has been Decommissioned.");
-                        }
-                        this.farReportService.save(asset);
-                    }
-                } else if (network != null && network.getSerialNumber() != null && !network.getSerialNumber().isEmpty()) {
-
-                    Date lastchangedDate = network.getChangedDate();
-                    if (lastchangedDate != null) {
-                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                        asset.setNodeType("Passive Node");
-                        asset.setInventoryStatus("NetworkDevice");
-                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
-                            asset.setStatusFlag("Decommissioned");
-                            asset.setChangedDate(new Date());
-                            asset.setChangedBy("System");
-                            LOGGER.info("Network IT Asset with serial number " + serialNumber + " has been Decommissioned.");
-                        }
-                        this.farReportService.save(asset);
-                    }
-                } else if (storage != null && storage.getHostSerialNumber() != null && !storage.getHostSerialNumber().isEmpty()) {
-                    Date lastchangedDate = storage.getChangedDate();
-                    if (lastchangedDate != null) {
-                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                        asset.setNodeType("Passive Node");
-                        asset.setInventoryStatus("Storage");
-                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
-                            asset.setStatusFlag("Decommissioned");
-                            asset.setChangedDate(new Date());
-                            asset.setChangedBy("System");
-                            LOGGER.info("Storage  Asset with serial number " + serialNumber + " has been Decommissioned.");
-                        }
-                        this.farReportService.save(asset);
-                    }
                 }
+                
+//                else if (passiveInv != null && passiveInv.getSerialNumber() != null && !passiveInv.getSerialNumber().isEmpty()) {
+//                    //CHECK PASSIVE DATA HERE 
+//                    Date lastchangedDate = passiveInv.getChangedDate();
+//                    if (lastchangedDate != null) {
+//                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+//                        asset.setNodeType("Passive Node");
+//                        asset.setInventoryStatus("Passive");
+//                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
+//                            asset.setStatusFlag("Decommissioned");
+//                            asset.setChangedDate(new Date());
+//                            asset.setChangedBy("System");
+//
+//                            LOGGER.info("Passive Asset with serial number " + serialNumber + " has been Decommissioned.");
+//                        }
+//                        this.farReportService.save(asset);
+//                    }
+//                } else if (host != null && host.getHostSerialNumber() != null && !host.getHostSerialNumber().isEmpty()) {
+//                    Date lastchangedDate = host.getChangedDate();
+//                    if (lastchangedDate != null) {
+//                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+//                        asset.setNodeType("Passive Node");
+//                        asset.setInventoryStatus("Host");
+//                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
+//                            asset.setStatusFlag("Decommissioned");
+//                            asset.setChangedDate(new Date());
+//                            asset.setChangedBy("System");
+//
+//                            LOGGER.info("Host IT Asset with serial number " + serialNumber + " has been Decommissioned.");
+//                        }
+//                        this.farReportService.save(asset);
+//                    }
+//                } else if (printer != null && printer.getHostSerialNumber() != null && !printer.getHostSerialNumber().isEmpty()) {
+//
+//                    Date lastchangedDate = printer.getChangedDate();
+//                    if (lastchangedDate != null) {
+//                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+//                        asset.setNodeType("Passive Node");
+//                        asset.setInventoryStatus("Printer");
+//                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
+//                            asset.setStatusFlag("Decommissioned");
+//                            asset.setChangedDate(new Date());
+//                            asset.setChangedBy("System");
+//
+//                            LOGGER.info("Printer IT Asset with serial number " + serialNumber + " has been Decommissioned.");
+//                        }
+//                        this.farReportService.save(asset);
+//                    }
+//                } else if (devices != null && devices.getHostSerialNumber() != null && !devices.getHostSerialNumber().isEmpty()) {
+//                    Date lastchangedDate = devices.getChangedDate();
+//                    if (lastchangedDate != null) {
+//                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+//                        asset.setNodeType("Passive Node");
+//                        asset.setInventoryStatus("SNMPManagedDevice");
+//                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
+//                            asset.setStatusFlag("Decommissioned");
+//                            asset.setChangedDate(new Date());
+//                            asset.setChangedBy("System");
+//                            LOGGER.info("Device Asset with serial number " + serialNumber + " has been Decommissioned.");
+//                        }
+//                        this.farReportService.save(asset);
+//                    }
+//                } else if (network != null && network.getSerialNumber() != null && !network.getSerialNumber().isEmpty()) {
+//
+//                    Date lastchangedDate = network.getChangedDate();
+//                    if (lastchangedDate != null) {
+//                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+//                        asset.setNodeType("Passive Node");
+//                        asset.setInventoryStatus("NetworkDevice");
+//                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
+//                            asset.setStatusFlag("Decommissioned");
+//                            asset.setChangedDate(new Date());
+//                            asset.setChangedBy("System");
+//                            LOGGER.info("Network IT Asset with serial number " + serialNumber + " has been Decommissioned.");
+//                        }
+//                        this.farReportService.save(asset);
+//                    }
+//                } else if (storage != null && storage.getHostSerialNumber() != null && !storage.getHostSerialNumber().isEmpty()) {
+//                    Date lastchangedDate = storage.getChangedDate();
+//                    if (lastchangedDate != null) {
+//                        LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+//                        asset.setNodeType("Passive Node");
+//                        asset.setInventoryStatus("Storage");
+//                        if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
+//                            asset.setStatusFlag("Decommissioned");
+//                            asset.setChangedDate(new Date());
+//                            asset.setChangedBy("System");
+//                            LOGGER.info("Storage  Asset with serial number " + serialNumber + " has been Decommissioned.");
+//                        }
+//                        this.farReportService.save(asset);
+//                    }
+//                }
             } catch (Exception ex) {
                 LOGGER.info("Exception: ", ex);
             }
