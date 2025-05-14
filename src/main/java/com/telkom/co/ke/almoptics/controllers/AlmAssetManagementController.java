@@ -16,17 +16,9 @@ import com.telkom.co.ke.almoptics.entities.tb_Asset;
 import com.telkom.co.ke.almoptics.entities.tb_Asset_Allocation;
 import com.telkom.co.ke.almoptics.entities.tb_Asset_Journal;
 import com.telkom.co.ke.almoptics.entities.tb_Item;
-import com.telkom.co.ke.almoptics.services.AssetAllocationService;
-import com.telkom.co.ke.almoptics.services.AssetJournalService;
-import com.telkom.co.ke.almoptics.services.AssetService;
-import com.telkom.co.ke.almoptics.services.FinancialReportService;
-import com.telkom.co.ke.almoptics.services.FarReportService;
-import com.telkom.co.ke.almoptics.services.ItemService;
-import com.telkom.co.ke.almoptics.services.LicenseService;
-import com.telkom.co.ke.almoptics.services.MyAsyncService;
-import com.telkom.co.ke.almoptics.services.NodeTypeService;
-import com.telkom.co.ke.almoptics.services.UnmappedActiveAssetService;
-import com.telkom.co.ke.almoptics.services.tbNodeService;
+import com.telkom.co.ke.almoptics.services.FarReportExcelExportService;
+import com.telkom.co.ke.almoptics.services.*;
+
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
@@ -58,6 +50,18 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.YearMonth;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 
 /**
  *
@@ -94,6 +98,7 @@ public class AlmAssetManagementController {
 
     private final NodeTypeService nodeTypeService;
 
+
     @Autowired
     public AlmAssetManagementController(NodeTypeService nodeTypeService, tbNodeService nodeService, LicenseService licenseService, UnmappedActiveAssetService unmappedService, JdbcTemplate jdbcTemplate, FinancialReportService financialReportService, ItemService itemservice, MyAsyncService myAsyncService, AssetAllocationService assetAllocationService, AssetJournalService assetJournalService, AssetService assetService, FarReportService farReportService) {
         this.nodeTypeService = nodeTypeService;
@@ -109,6 +114,10 @@ public class AlmAssetManagementController {
         this.myAsyncService = myAsyncService;
         this.farReportService = farReportService;
     }
+
+
+    @Autowired
+    private FarReportExcelExportService exportService;
 
     //UPLOAD LICENSES WHICH HAVE NOT BEEN DISCOVERED AT NEP
     @PostMapping(value = "uploadLicenses", produces = "application/json")
@@ -1546,5 +1555,26 @@ public class AlmAssetManagementController {
             System.out.println("Year " + year + " - Depreciation: " + depreciation + ", Book Value: " + bookValue);
         }
         return accumulatedDepreciation;
+    }
+
+    @GetMapping("/far-report/excel")
+    public ResponseEntity<Resource> exportFarReportToExcel() throws IOException {
+        // Generate Excel file as a byte array
+        ByteArrayInputStream excelStream = exportService.exportFarReportToExcel();
+
+        // Create InputStreamResource for streaming
+        InputStreamResource resource = new InputStreamResource(excelStream);
+
+        // Set headers for file download
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=far_report.xlsx");
+        headers.add(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate");
+        headers.add(HttpHeaders.PRAGMA, "no-cache");
+        headers.add(HttpHeaders.EXPIRES, "0");
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(resource);
     }
 }
