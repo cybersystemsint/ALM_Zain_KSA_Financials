@@ -19,6 +19,7 @@ import com.telkom.co.ke.almoptics.entities.tb_Item;
 import com.telkom.co.ke.almoptics.services.FarReportExcelExportService;
 import com.telkom.co.ke.almoptics.services.*;
 
+import java.io.ByteArrayOutputStream;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
@@ -56,6 +57,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import com.telkom.co.ke.almoptics.services.FarExportService;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -98,9 +101,11 @@ public class AlmAssetManagementController {
 
     private final NodeTypeService nodeTypeService;
 
+    private final FarExportService farExportService;
+
 
     @Autowired
-    public AlmAssetManagementController(NodeTypeService nodeTypeService, tbNodeService nodeService, LicenseService licenseService, UnmappedActiveAssetService unmappedService, JdbcTemplate jdbcTemplate, FinancialReportService financialReportService, ItemService itemservice, MyAsyncService myAsyncService, AssetAllocationService assetAllocationService, AssetJournalService assetJournalService, AssetService assetService, FarReportService farReportService) {
+    public AlmAssetManagementController(NodeTypeService nodeTypeService, tbNodeService nodeService, LicenseService licenseService, UnmappedActiveAssetService unmappedService, JdbcTemplate jdbcTemplate, FinancialReportService financialReportService, ItemService itemservice, MyAsyncService myAsyncService, AssetAllocationService assetAllocationService, AssetJournalService assetJournalService, AssetService assetService, FarReportService farReportService, FarExportService farExportService) {
         this.nodeTypeService = nodeTypeService;
         this.nodeService = nodeService;
         this.licenseService = licenseService;
@@ -113,6 +118,7 @@ public class AlmAssetManagementController {
         this.itemservice = itemservice;
         this.myAsyncService = myAsyncService;
         this.farReportService = farReportService;
+        this.farExportService = farExportService;
     }
 
 
@@ -1556,25 +1562,174 @@ public class AlmAssetManagementController {
         }
         return accumulatedDepreciation;
     }
+    @PostMapping(value = "/far-report/export")
+    @CrossOrigin(origins = "*", allowedHeaders = "*", maxAge = 3600)
+    public ResponseEntity<byte[]> exportFarReport(@RequestBody JSONObject assetRequest) {
+        try {
+            this.LOGGER.info("FAR Report Export Request: " + assetRequest);
 
-    @GetMapping("/far-report/excel")
-    public ResponseEntity<Resource> exportFarReportToExcel() throws IOException {
-        // Generate Excel file as a byte array
-        ByteArrayInputStream excelStream = exportService.exportFarReportToExcel();
+            // Get format (default to Excel if not specified)
+            String format = assetRequest.containsKey("format") ? assetRequest.getAsString("format") : "EXCEL";
+            if (!"CSV".equalsIgnoreCase(format) && !"EXCEL".equalsIgnoreCase(format)) {
+                return ResponseEntity.badRequest().body(null);
+            }
 
-        // Create InputStreamResource for streaming
-        InputStreamResource resource = new InputStreamResource(excelStream);
+            // Build parameters
+            Map<String, Object> requestParams = new HashMap<>();
+            requestParams.put("assetId", assetRequest.containsKey("assetId") ? assetRequest.getAsString("assetId") : "");
+            requestParams.put("columnName", assetRequest.containsKey("columnName") ? assetRequest.getAsString("columnName") : "");
+            requestParams.put("searchQuery", assetRequest.containsKey("searchQuery") ? assetRequest.getAsString("searchQuery") : "");
+            requestParams.put("dateFrom", assetRequest.containsKey("dateFrom") ? assetRequest.getAsString("dateFrom") : null);
+            requestParams.put("dateTo", assetRequest.containsKey("dateTo") ? assetRequest.getAsString("dateTo") : null);
 
-        // Set headers for file download
-        HttpHeaders headers = new HttpHeaders();
-        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=far_report.xlsx");
-        headers.add(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate");
-        headers.add(HttpHeaders.PRAGMA, "no-cache");
-        headers.add(HttpHeaders.EXPIRES, "0");
+            long totalRecords = farExportService.getTotalFilteredRecords(requestParams);
 
-        return ResponseEntity.ok()
-                .headers(headers)
-                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                .body(resource);
+            if (totalRecords == 0) {
+                return ResponseEntity.noContent().build();
+            }
+
+            String filename;
+            byte[] content;
+            String contentType;
+
+            if ("CSV".equalsIgnoreCase(format)) {
+                filename = "FAR_Financial_Report_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".csv";
+                contentType = "text/csv";
+                content = farExportService.exportFarReportToCsv(requestParams);
+            } else { // EXCEL
+                filename = "FAR_Financial_Report_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".xlsx";
+                contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+                InputStreamResource excelResource = farExportService.exportFarReportToExcel(requestParams);
+                // Convert InputStreamResource to byte array
+                try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                    excelResource.getInputStream().transferTo(baos);
+                    content = baos.toByteArray();
+                }
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"");
+            headers.set(HttpHeaders.CONTENT_TYPE, contentType);
+            headers.set("X-Total-Records", String.valueOf(totalRecords));
+
+            return new ResponseEntity<>(content, headers, HttpStatus.OK);
+
+        } catch (Exception e) {
+            this.LOGGER.error("Error during FAR Report export: " + e.getMessage(), e);
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .header("X-Export-Error", "Export failed: " + e.getMessage())
+                    .body(null);
+        }
+
     }
+
+    @PostMapping(value = "/far-report/export-stats")
+    @CrossOrigin(origins = "*", allowedHeaders = "*", maxAge = 3600)
+    public Map<String, Object> getFarReportExportStats(@RequestBody JSONObject assetRequest) {
+        try {
+            this.LOGGER.info("FAR Report Export Stats Request: " + assetRequest);
+
+            String assetId = assetRequest.containsKey("assetId") ? assetRequest.getAsString("assetId") : "";
+            String columnName = assetRequest.containsKey("columnName") ? assetRequest.getAsString("columnName") : "";
+            String searchQuery = assetRequest.containsKey("searchQuery") ? assetRequest.getAsString("searchQuery") : "";
+            String dateFrom = assetRequest.containsKey("dateFrom") ? assetRequest.getAsString("dateFrom") : null;
+            String dateTo = assetRequest.containsKey("dateTo") ? assetRequest.getAsString("dateTo") : null;
+
+            Map<String, Object> requestParams = new HashMap<>();
+            requestParams.put("assetId", assetId);
+            requestParams.put("columnName", columnName);
+            requestParams.put("searchQuery", searchQuery);
+            requestParams.put("dateFrom", dateFrom);
+            requestParams.put("dateTo", dateTo);
+
+            long totalRecords = farExportService.getTotalFilteredRecords(requestParams);
+            int estimatedSheets = (int) Math.ceil((double) totalRecords / 1000000.0);
+            double estimatedSizeMB = totalRecords * 0.001;
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("totalRecords", totalRecords);
+            response.put("estimatedSheets", Math.max(1, estimatedSheets));
+            response.put("estimatedFileSizeMB", Math.round(estimatedSizeMB * 100.0) / 100.0);
+            response.put("canExport", totalRecords > 0);
+            response.put("exportRecommendation", getExportRecommendation(totalRecords));
+            response.put("requestTimestamp", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
+
+            return response;
+
+        } catch (Exception e) {
+            this.LOGGER.error("Error calculating export stats: " + e.getMessage(), e);
+
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Failed to calculate export statistics");
+            errorResponse.put("message", e.getMessage());
+            errorResponse.put("canExport", false);
+            return errorResponse;
+        }
+    }
+
+    private String getExportRecommendation(long totalRecords) {
+        if (totalRecords == 0) {
+            return "No records to export. Please adjust your filter criteria.";
+        } else if (totalRecords <= 100000) {
+            return "Small dataset - Export should complete quickly.";
+        } else if (totalRecords <= 500000) {
+            return "Medium dataset - Export may take a few minutes.";
+        } else if (totalRecords <= 1000000) {
+            return "Large dataset - Export may take several minutes. Single sheet.";
+        } else {
+            int sheets = (int) Math.ceil((double) totalRecords / 1000000.0);
+            return String.format("Very large dataset - Export will create %d sheets and may take 10+ minutes. Consider filtering data.", sheets);
+        }
+    }
+    @PostMapping(value = "/test-export")
+    public ResponseEntity<String> testExport(@RequestBody JSONObject assetRequest) {
+        try {
+            this.LOGGER.info("=== TEST: Starting detailed test ===");
+
+            Map<String, Object> requestParams = new HashMap<>();
+            requestParams.put("columnName", "");
+            requestParams.put("searchQuery", "");
+            requestParams.put("dateFrom", "");
+            requestParams.put("dateTo", "");
+
+            this.LOGGER.info("TEST: Step 1 - Testing record count");
+            long count = farExportService.getTotalFilteredRecords(requestParams);
+            this.LOGGER.info("TEST: Step 1 SUCCESS - Count = " + count);
+
+            this.LOGGER.info("TEST: Step 2 - Testing Excel creation");
+            InputStreamResource excel = farExportService.exportFarReportToExcel(requestParams);
+            this.LOGGER.info("TEST: Step 2 SUCCESS - Excel created");
+
+            return ResponseEntity.ok("All tests passed! Records: " + count);
+
+        } catch (Exception e) {
+            this.LOGGER.error("=== TEST FAILED ===");
+            this.LOGGER.error("Error Type: " + e.getClass().getSimpleName());
+            this.LOGGER.error("Error Message: " + e.getMessage());
+            this.LOGGER.error("Full Stack Trace:", e);
+            return ResponseEntity.status(500).body("DETAILED ERROR: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+        }
+    }
+//    @GetMapping("/far-report/excel")
+//    public ResponseEntity<Resource> exportFarReportToExcel() throws IOException {
+//        // Generate Excel file as a byte array
+//        ByteArrayInputStream excelStream = exportService.exportFarReportToExcel();
+//
+//        // Create InputStreamResource for streaming
+//        InputStreamResource resource = new InputStreamResource(excelStream);
+//
+//        // Set headers for file download
+//        HttpHeaders headers = new HttpHeaders();
+//        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=far_report.xlsx");
+//        headers.add(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate");
+//        headers.add(HttpHeaders.PRAGMA, "no-cache");
+//        headers.add(HttpHeaders.EXPIRES, "0");
+//
+//        return ResponseEntity.ok()
+//                .headers(headers)
+//                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+//                .body(resource);
+//    }
 }
