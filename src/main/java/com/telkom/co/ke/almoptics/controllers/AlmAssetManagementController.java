@@ -1562,7 +1562,7 @@ public class AlmAssetManagementController {
         }
         return accumulatedDepreciation;
     }
-    @PostMapping(value = "/far-report/export")
+    @PostMapping(value = "/export")
     @CrossOrigin(origins = "*", allowedHeaders = "*", maxAge = 3600)
     public ResponseEntity<byte[]> exportFarReport(@RequestBody JSONObject assetRequest) {
         try {
@@ -1593,11 +1593,11 @@ public class AlmAssetManagementController {
             String contentType;
 
             if ("CSV".equalsIgnoreCase(format)) {
-                filename = "FAR_Financial_Report_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".csv";
+                filename = "FAR_Financial_Report_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date()) + ".csv";
                 contentType = "text/csv";
                 content = farExportService.exportFarReportToCsv(requestParams);
             } else { // EXCEL
-                filename = "FAR_Financial_Report_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".xlsx";
+                filename = "FAR_Financial_Report_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date()) + ".xlsx";
                 contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
                 InputStreamResource excelResource = farExportService.exportFarReportToExcel(requestParams);
@@ -1622,10 +1622,9 @@ public class AlmAssetManagementController {
                     .header("X-Export-Error", "Export failed: " + e.getMessage())
                     .body(null);
         }
-
     }
 
-    @PostMapping(value = "/far-report/export-stats")
+    @PostMapping(value = "/export-stats")
     @CrossOrigin(origins = "*", allowedHeaders = "*", maxAge = 3600)
     public Map<String, Object> getFarReportExportStats(@RequestBody JSONObject assetRequest) {
         try {
