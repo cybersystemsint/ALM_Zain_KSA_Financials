@@ -63,6 +63,11 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import java.io.IOException;
+
 /**
  *
  * @author jgithu
@@ -1557,6 +1562,7 @@ public class AlmAssetManagementController {
         return accumulatedDepreciation;
     }
 
+<<<<<<< Updated upstream
     @GetMapping("/far-report/excel")
     public ResponseEntity<Resource> exportFarReportToExcel() throws IOException {
         // Generate Excel file as a byte array
@@ -1578,3 +1584,123 @@ public class AlmAssetManagementController {
                 .body(resource);
     }
 }
+=======
+    @GetMapping("/exportFarReport")
+    public void exportFarReport(HttpServletResponse response) throws IOException {
+        // Set response headers for Excel file download
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename=far_report.xlsx");
+
+        // Create streaming workbook with a window size of 100 rows
+        try (SXSSFWorkbook workbook = new SXSSFWorkbook(100)) {
+            Sheet sheet = workbook.createSheet("Far Report");
+
+            // Define all column headers based on tb_FarReport entity
+            String[] headers = {
+                    "Record No", "Record Datetime", "Book", "Asset ID", "Quantity", "Description",
+                    "Creation Date", "Serial Number", "Tag Number", "Pic Status", "Pic Date",
+                    "Cip Delivery Date", "Link Id", "Acceptance Number", "Depreciate Flag",
+                    "Cip Eu", "Invoice Number", "Po Number", "Po Line Number", "Upl Line",
+                    "Transfer To New Far", "Asset Status", "Value", "Part Number", "Vendor Name",
+                    "Vendor Number", "Merged Code", "Cost Account", "Accumulated Depre Account",
+                    "Cip Cost Account", "Expense Cost Center", "Expense Account", "Life",
+                    "Date Placed In Service", "Cost", "Nbv", "Depreciation Amount",
+                    "Ytd Depreciation", "Depreciation Reserve", "Salvage Value", "Category",
+                    "Category Description", "Location Segment1", "Location Segment2",
+                    "Location Segment3", "Location Segment4", "Locations", "Sequence Number",
+                    "Monthly Depreciation Amt", "Accumulated Depreciation Amt", "Depreciation Date",
+                    "Net Cost", "Status Flag", "Changed By", "Inserted By", "Financial Approval",
+                    "Changed Date", "Node Type", "Inventory Status"
+            };
+
+            // Create header row
+            Row headerRow = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                headerRow.createCell(i).setCellValue(headers[i]);
+            }
+
+            // Fetch and write data in batches
+            int page = 0;
+            int size = 1000; // Batch size, adjustable based on performance testing
+            int rowNum = 1;
+            List<tb_FarReport> reports;
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+
+            do {
+                reports = farReportService.findAll(page, size);
+                for (tb_FarReport report : reports) {
+                    Row row = sheet.createRow(rowNum++);
+
+                    // Write all columns with null handling and proper formatting
+                    row.createCell(0).setCellValue(report.getRecordNo());
+                    row.createCell(1).setCellValue(report.getRecordDatetime() != null ? dateFormat.format(report.getRecordDatetime()) : "");
+                    row.createCell(2).setCellValue(report.getBook() != null ? report.getBook() : "");
+                    row.createCell(3).setCellValue(report.getAssetId() != null ? report.getAssetId() : "");
+                    row.createCell(4).setCellValue(report.getQuantity() != null ? report.getQuantity() : 0);
+                    row.createCell(5).setCellValue(report.getDescription() != null ? report.getDescription() : "");
+                    row.createCell(6).setCellValue(report.getCreationDate() != null ? dateFormat.format(report.getCreationDate()) : "");
+                    row.createCell(7).setCellValue(report.getSerialNumber() != null ? report.getSerialNumber() : "");
+                    row.createCell(8).setCellValue(report.getTagNumber() != null ? report.getTagNumber() : "");
+                    row.createCell(9).setCellValue(report.getPicStatus() != null ? report.getPicStatus() : "");
+                    row.createCell(10).setCellValue(report.getPicDate() != null ? dateFormat.format(report.getPicDate()) : "");
+                    row.createCell(11).setCellValue(report.getCipDeliveryDate() != null ? dateFormat.format(report.getCipDeliveryDate()) : "");
+                    row.createCell(12).setCellValue(report.getLinkId() != null ? report.getLinkId() : "");
+                    row.createCell(13).setCellValue(report.getAcceptanceNumber() != null ? report.getAcceptanceNumber() : "");
+                    row.createCell(14).setCellValue(report.getDepreciateFlag() != null ? report.getDepreciateFlag() : "");
+                    row.createCell(15).setCellValue(report.getCipEu() != null ? report.getCipEu() : "");
+                    row.createCell(16).setCellValue(report.getInvoiceNumber() != null ? report.getInvoiceNumber() : "");
+                    row.createCell(17).setCellValue(report.getPoNumber() != null ? report.getPoNumber() : "");
+                    row.createCell(18).setCellValue(report.getPoLineNumber() != null ? report.getPoLineNumber() : "");
+                    row.createCell(19).setCellValue(report.getUplLine() != null ? report.getUplLine() : "");
+                    row.createCell(20).setCellValue(report.getTransferToNewFar() != null ? report.getTransferToNewFar() : "");
+                    row.createCell(21).setCellValue(report.getAssetStatus() != null ? report.getAssetStatus() : "");
+                    row.createCell(22).setCellValue(report.getValue() != null ? report.getValue() : 0.0);
+                    row.createCell(23).setCellValue(report.getPartNumber() != null ? report.getPartNumber() : "");
+                    row.createCell(24).setCellValue(report.getVendorName() != null ? report.getVendorName() : "");
+                    row.createCell(25).setCellValue(report.getVendorNumber() != null ? report.getVendorNumber() : "");
+                    row.createCell(26).setCellValue(report.getMergedCode() != null ? report.getMergedCode() : "");
+                    row.createCell(27).setCellValue(report.getCostAccount() != null ? report.getCostAccount() : "");
+                    row.createCell(28).setCellValue(report.getAccumulatedDepreAccount() != null ? report.getAccumulatedDepreAccount() : "");
+                    row.createCell(29).setCellValue(report.getCipCostAccount() != null ? report.getCipCostAccount() : "");
+                    row.createCell(30).setCellValue(report.getExpenseCostCenter() != null ? report.getExpenseCostCenter() : "");
+                    row.createCell(31).setCellValue(report.getExpenseAccount() != null ? report.getExpenseAccount() : "");
+                    row.createCell(32).setCellValue(report.getLife() != null ? report.getLife() : 0);
+                    row.createCell(33).setCellValue(report.getDatePlacedInService() != null ? dateFormat.format(report.getDatePlacedInService()) : "");
+                    row.createCell(34).setCellValue(report.getCost() != null ? report.getCost() : 0.0);
+                    row.createCell(35).setCellValue(report.getNbv() != null ? report.getNbv() : 0.0);
+                    row.createCell(36).setCellValue(report.getDepreciationAmount() != null ? report.getDepreciationAmount() : 0.0);
+                    row.createCell(37).setCellValue(report.getYtdDepreciation() != null ? report.getYtdDepreciation() : 0.0);
+                    row.createCell(38).setCellValue(report.getDepreciationReserve() != null ? report.getDepreciationReserve() : 0.0);
+                    row.createCell(39).setCellValue(report.getSalvageValue() != null ? report.getSalvageValue() : 0.0);
+                    row.createCell(40).setCellValue(report.getCategory() != null ? report.getCategory() : "");
+                    row.createCell(41).setCellValue(report.getCategoryDescription() != null ? report.getCategoryDescription() : "");
+                    row.createCell(42).setCellValue(report.getLocationSegment1() != null ? report.getLocationSegment1() : "");
+                    row.createCell(43).setCellValue(report.getLocationSegment2() != null ? report.getLocationSegment2() : "");
+                    row.createCell(44).setCellValue(report.getLocationSegment3() != null ? report.getLocationSegment3() : "");
+                    row.createCell(45).setCellValue(report.getLocationSegment4() != null ? report.getLocationSegment4() : "");
+                    row.createCell(46).setCellValue(report.getLocations() != null ? report.getLocations() : "");
+                    row.createCell(47).setCellValue(report.getSequenceNumber() != null ? report.getSequenceNumber() : 0);
+                    row.createCell(48).setCellValue(report.getMonthlyDepreciationAmt() != null ? report.getMonthlyDepreciationAmt() : 0.0);
+                    row.createCell(49).setCellValue(report.getAccumulatedDepreciationAmt() != null ? report.getAccumulatedDepreciationAmt() : 0.0);
+                    row.createCell(50).setCellValue(report.getDepreciationDate() != null ? dateFormat.format(report.getDepreciationDate()) : "");
+                    row.createCell(51).setCellValue(report.getNetCost() != null ? report.getNetCost() : 0.0);
+                    row.createCell(52).setCellValue(report.getStatusFlag() != null ? report.getStatusFlag() : "");
+                    row.createCell(53).setCellValue(report.getChangedBy() != null ? report.getChangedBy() : "");
+                    row.createCell(54).setCellValue(report.getInsertedBy() != null ? report.getInsertedBy() : "");
+                    row.createCell(55).setCellValue(report.getFinancialApproval() != null ? report.getFinancialApproval() : "");
+                    row.createCell(56).setCellValue(report.getChangedDate() != null ? dateFormat.format(report.getChangedDate()) : "");
+                    row.createCell(57).setCellValue(report.getNodeType() != null ? report.getNodeType() : "");
+                    row.createCell(58).setCellValue(report.getInventoryStatus() != null ? report.getInventoryStatus() : "");
+                }
+                page++;
+            } while (reports.size() == size);
+
+            // Write workbook to response output stream
+            workbook.write(response.getOutputStream());
+        } catch (Exception e) {
+            // Handle errors gracefully
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Error exporting Far Report: " + e.getMessage());
+        }
+    }
+}
+>>>>>>> Stashed changes

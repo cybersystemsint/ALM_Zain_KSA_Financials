@@ -19,6 +19,7 @@ import javax.persistence.Table;
  * @author jgithu
  */
 @Entity
+
 @Table(name = "`tb_FarReport`", indexes = {
     @Index(name = "PRIMARY", columnList = "recordNo", unique = false)})
 public class tb_FarReport implements Serializable {
