@@ -121,7 +121,7 @@ public class InventorySyncingScheduler {
                     tbNodeType nodetype = this.nodeTypeService.findById(nodes.getNodeTypeId());
                     if (lastchangedDate != null) {
                         LocalDate lastUpdatedLocalDate = lastchangedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                        asset.setInventoryStatus("Node");
+//                        asset.setInventoryStatus("Node");
                         asset.setNodeType(nodetype.getNodeType());
                         if (lastUpdatedLocalDate.isBefore(twentyDaysAgo)) {
                             asset.setStatusFlag("Decommissioned");

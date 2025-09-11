@@ -52,7 +52,7 @@ public class FarReportExcelExportService {
                     "Location Segment 3", "Location Segment 4", "Locations", "Sequence Number",
                     "Monthly Depreciation Amt", "Accumulated Depreciation Amt", "Depreciation Date",
                     "Net Cost", "Status Flag", "Changed By", "Inserted By", "Financial Approval",
-                    "Changed Date", "Node Type", "Inventory Status"
+                    "Changed Date", "Node Type"
             };
 
             for (int page = 0; page < totalPages; page++) {
@@ -149,7 +149,7 @@ public class FarReportExcelExportService {
         setCellValue(row, cellIndex++, report.getFinancialApproval());
         setCellValue(row, cellIndex++, report.getChangedDate());
         setCellValue(row, cellIndex++, report.getNodeType());
-        setCellValue(row, cellIndex++, report.getInventoryStatus());
+//        setCellValue(row, cellIndex++, report.getInventoryStatus());
     }
 
     private void setCellValue(Row row, int cellIndex, Object value) {

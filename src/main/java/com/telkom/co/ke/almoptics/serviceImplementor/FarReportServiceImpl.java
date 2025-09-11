@@ -60,11 +60,11 @@ public class FarReportServiceImpl implements FarReportService {
 
     }
 
-    @Override
-    public List<tb_FarReport> findByInventoryStatus(String paramString) {
-        return this.farRepo.findByInventoryStatus(paramString);
-
-    }
+//    @Override
+//    public List<tb_FarReport> findByInventoryStatus(String paramString) {
+//        return this.farRepo.findByInventoryStatus(paramString);
+//
+//    }
 
     public List<tb_FarReport> findAll(int page, int size) {
         Pageable pageable = PageRequest.of(page, size);

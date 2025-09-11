@@ -660,7 +660,7 @@ public class AlmAssetManagementController {
             whereClause.append(" AND ").append(columnName.toLowerCase()).append(" LIKE ? ");
         }
 
-      
+
         return whereClause.toString();
     }
 
@@ -1562,7 +1562,7 @@ public class AlmAssetManagementController {
         return accumulatedDepreciation;
     }
 
-<<<<<<< Updated upstream
+
     @GetMapping("/far-report/excel")
     public ResponseEntity<Resource> exportFarReportToExcel() throws IOException {
         // Generate Excel file as a byte array
@@ -1583,8 +1583,7 @@ public class AlmAssetManagementController {
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(resource);
     }
-}
-=======
+
     @GetMapping("/exportFarReport")
     public void exportFarReport(HttpServletResponse response) throws IOException {
         // Set response headers for Excel file download
@@ -1690,7 +1689,7 @@ public class AlmAssetManagementController {
                     row.createCell(55).setCellValue(report.getFinancialApproval() != null ? report.getFinancialApproval() : "");
                     row.createCell(56).setCellValue(report.getChangedDate() != null ? dateFormat.format(report.getChangedDate()) : "");
                     row.createCell(57).setCellValue(report.getNodeType() != null ? report.getNodeType() : "");
-                    row.createCell(58).setCellValue(report.getInventoryStatus() != null ? report.getInventoryStatus() : "");
+//                    row.createCell(58).setCellValue(report.getInventoryStatus() != null ? report.getInventoryStatus() : "");
                 }
                 page++;
             } while (reports.size() == size);
@@ -1702,5 +1701,6 @@ public class AlmAssetManagementController {
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Error exporting Far Report: " + e.getMessage());
         }
     }
+
 }
->>>>>>> Stashed changes
+

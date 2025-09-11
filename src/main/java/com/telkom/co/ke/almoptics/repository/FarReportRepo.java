@@ -28,6 +28,6 @@ public interface FarReportRepo extends JpaRepository<tb_FarReport, Long> {
     // tb_FinancialReport findBySerialNumber(String paramString);
     List<tb_FarReport> findByAssetId(String paramString);
     
-     List<tb_FarReport> findByInventoryStatus(String paramString);
+//     List<tb_FarReport> findByInventoryStatus(String paramString);
 
 }

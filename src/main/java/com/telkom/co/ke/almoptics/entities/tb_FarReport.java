@@ -21,7 +21,7 @@ import javax.persistence.Table;
 @Entity
 
 @Table(name = "`tb_FarReport`", indexes = {
-    @Index(name = "PRIMARY", columnList = "recordNo", unique = false)})
+        @Index(name = "PRIMARY", columnList = "recordNo", unique = false)})
 public class tb_FarReport implements Serializable {
 
     @Id
@@ -49,6 +49,9 @@ public class tb_FarReport implements Serializable {
 
     @Column(name = "serialNumber")
     private String serialNumber;
+
+    @Column(name = "asset_type")
+    private String assetType;
 
     @Column(name = "tagNumber")
     private String tagNumber;
@@ -105,6 +108,12 @@ public class tb_FarReport implements Serializable {
 
     @Column(name = "mergedCode")
     private String mergedCode;
+
+    @Column(name = "createdDate")
+    private Date createdDate;
+
+    @Column(name = "updatedDate")
+    private Date updatedDate;
 
     @Column(name = "costAccount")
     private String costAccount;
@@ -179,7 +188,7 @@ public class tb_FarReport implements Serializable {
     @Column(name = "netCost")
     private Double netCost;
 
-    //new columns 
+    //new columns
     @Column(name = "statusFlag")
     private String statusFlag;
 
@@ -198,17 +207,35 @@ public class tb_FarReport implements Serializable {
     @Column(name = "nodeType")
     private String nodeType;
 
-    @Column(name = "inventoryStatus")
-    private String inventoryStatus;
+    @Column(name = "createdBy")
+    private String createdBy;
 
-    public String getInventoryStatus() {
-        return inventoryStatus;
+    @Column(name = "updatedBy")
+    private String updatedBy;
+
+    public String getCreatedBy() {
+        return createdBy;
     }
 
-    public void setInventoryStatus(String inventoryStatus) {
-        this.inventoryStatus = inventoryStatus;
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
     }
 
+    public String getUpdatedBy() {
+        return updatedBy;
+    }
+
+    public void setUpdatedBy(String updatedBy) {
+        this.updatedBy = updatedBy;
+    }
+
+    public String getAssetType() {
+        return assetType;
+    }
+
+    public void setAssetType(String assetType) {
+        this.assetType = assetType;
+    }
     public Double getMonthlyDepreciationAmt() {
         return monthlyDepreciationAmt;
     }
@@ -291,6 +318,22 @@ public class tb_FarReport implements Serializable {
 
     public Date getCreationDate() {
         return creationDate;
+    }
+
+    public Date getCreatedDate() {
+        return createdDate;
+    }
+
+    public void setCreatedDate(Date createdDate) {
+        this.createdDate = createdDate;
+    }
+
+    public Date getUpdatedDate() {
+        return updatedDate;
+    }
+
+    public void setUpdatedDate(Date updatedDate) {
+        this.updatedDate = updatedDate;
     }
 
     public void setCreationDate(Date creationDate) {

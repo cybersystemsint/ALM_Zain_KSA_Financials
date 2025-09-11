@@ -26,7 +26,7 @@ public interface FarReportService {
 
     List<tb_FarReport> findByAssetId(String paramString);
 
-    List<tb_FarReport> findByInventoryStatus(String paramString);
+//    List<tb_FarReport> findByInventoryStatus(String paramString);
 
     Page<tb_FarReport> findAll(Pageable pageable);
 
