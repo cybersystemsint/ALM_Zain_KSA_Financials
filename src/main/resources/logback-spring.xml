@@ -1,3 +1,4 @@
+
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
@@ -10,7 +11,7 @@
         </encoder>
         <file>${LOG_FILE}</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-             daily rollover 
+            daily rollover
             <fileNamePattern>${LOG_FILE}-.%d{yyyy-MM-dd}</fileNamePattern>
         </rollingPolicy>
     </appender>
@@ -18,7 +19,7 @@
         <appender-ref ref="FILE" />
 
     </root>
-    
+
     <logger name="org.springframework.web" level="INFO"/>
-    
-</configuration> 
+
+</configuration>
