@@ -49,7 +49,12 @@ public class DepreciationScheduler {
     private FarReportService farReportService;
 
    // @Scheduled(cron = "0 0 20 * * *", zone = "Africa/Nairobi")
-  //  @Scheduled(cron = "0 0 0 L * ?", zone = "Africa/Nairobi") //EXECUTE AT THE LAST DAY OF THE MONTH 
+
+//    @Scheduled(cron = "0 0 0 L * ?", zone = "Africa/Nairobi ") //EXECUTE AT THE LAST DAY OF THE MONTH
+  // Endmonth run
+//   @Scheduled(cron = "0 0 0 L * ?", zone = "Africa/Nairobi")
+   //UAT run 30/10/2025
+   @Scheduled(cron = "0 0 16 30 10 ?", zone = "Africa/Nairobi")
     public void processDepreciation() {
         try {
             LOGGER.info("SCHEDULER STARTED FOR DEPRECIATION");

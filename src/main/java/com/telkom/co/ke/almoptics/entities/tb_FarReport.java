@@ -50,7 +50,7 @@ public class tb_FarReport implements Serializable {
     @Column(name = "serialNumber")
     private String serialNumber;
 
-    @Column(name = "asset_type")
+    @Column(name = "assetType")
     private String assetType;
 
     @Column(name = "tagNumber")
@@ -212,6 +212,9 @@ public class tb_FarReport implements Serializable {
 
     @Column(name = "updatedBy")
     private String updatedBy;
+
+    @Column(name = "mapped")
+    private String mapped;
 
     public String getCreatedBy() {
         return createdBy;
@@ -714,6 +717,14 @@ public class tb_FarReport implements Serializable {
 
     public void setNodeType(String nodeType) {
         this.nodeType = nodeType;
+    }
+
+    public String getMapped() {
+        return mapped;
+    }
+
+    public void setMapped(String mapped) {
+        this.mapped = mapped;
     }
 
 }

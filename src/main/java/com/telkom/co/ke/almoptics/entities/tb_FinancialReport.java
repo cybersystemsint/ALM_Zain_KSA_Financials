@@ -132,6 +132,9 @@ public class tb_FinancialReport implements Serializable {
     @Column(name = "netCost")
     private Double  netCost;
 
+    @Column(name = "mapped")
+    private String mapped;
+
     public tb_FinancialReport() {
     }
 
@@ -204,6 +207,14 @@ public class tb_FinancialReport implements Serializable {
 
     public void setApprovalStatus(String approvalStatus) {
         this.approvalStatus = approvalStatus;
+    }
+
+    public String getMapped() {
+        return mapped;
+    }
+
+    public void setMapped(String mapped) {
+        this.mapped= mapped;
     }
 
     public Date getDepreciationDate() {

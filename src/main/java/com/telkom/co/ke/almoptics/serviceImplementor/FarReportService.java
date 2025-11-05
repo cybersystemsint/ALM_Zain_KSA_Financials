@@ -69,12 +69,12 @@ public class FarReportService {
             "locationSegment3, locationSegment4, locations, sequenceNumber, createdBy, createdDate, " +
             "updatedBy, updatedDate, monthlyDepreciationAmt, accumulatedDepreciationAmt, " +
             "depreciationDate, netCost, statusFlag, changedBy, insertedBy, financialApproval, " +
-            "changedDate, nodeType" +
+            "changedDate, nodeType, mapped" +
             ") VALUES (" +
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " +  // 20
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " +  // 40
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " +  // 60
-            "?, ?" +                                                        // 62
+            "?, ?, ?" +                                                        // 63
             ")";
 
     // UPDATE SQL - 61 fields to update + 1 WHERE clause = 62 parameters
@@ -90,7 +90,7 @@ public class FarReportService {
             "locationSegment3 = ?, locationSegment4 = ?, locations = ?, sequenceNumber = ?, createdBy = ?, " +
             "createdDate = ?, updatedBy = ?, updatedDate = ?, monthlyDepreciationAmt = ?, " +
             "accumulatedDepreciationAmt = ?, depreciationDate = ?, netCost = ?, statusFlag = ?, changedBy = ?, " +
-            "insertedBy = ?, financialApproval = ?, changedDate = ?, nodeType = ? " +
+            "insertedBy = ?, financialApproval = ?, changedDate = ?, nodeType = ?, mapped = ? " +
             "WHERE assetId = ?";
 
     private static final String[] EXPECTED_FIELDS = {
@@ -103,7 +103,7 @@ public class FarReportService {
             "salvageValue", "category", "categoryDescription", "locationSegment1", "locationSegment2",
             "locationSegment3", "locationSegment4", "locations", "sequenceNumber", "createdBy", "createdDate",
             "updatedBy", "updatedDate", "monthlyDepreciationAmt", "accumulatedDepreciationAmt", "depreciationDate",
-            "netCost", "statusFlag", "changedBy", "insertedBy", "financialApproval", "changedDate", "nodeType"
+            "netCost", "statusFlag", "changedBy", "insertedBy", "financialApproval", "changedDate", "nodeType", "mapped"
     };
 
     private final ConcurrentHashMap<String, String> taskStatus = new ConcurrentHashMap<>();
@@ -264,7 +264,7 @@ public class FarReportService {
     }
 
     private Object[] buildInsertArgs(Map<String, Object> rowMap, Date newDate, SimpleDateFormat format) {
-        Object[] args = new Object[62]; // 62 fields for INSERT
+        Object[] args = new Object[63]; // 63 fields for INSERT
         int index = 0;
 
         args[index++] = newDate; // recordDatetime
@@ -330,19 +330,20 @@ public class FarReportService {
         args[index++] = String.valueOf(rowMap.getOrDefault("financialApproval", ""));
         args[index++] = newDate; // changedDate
         args[index++] = String.valueOf(rowMap.getOrDefault("nodeType", ""));
+        args[index++] = String.valueOf(rowMap.getOrDefault("mapped", ""));
 
-        if (index != 62) {
-            LOGGER.error("FATAL: INSERT field count mismatch - Expected: 62, Got: {}, AssetId: {}",
+        if (index != 63) {
+            LOGGER.error("FATAL: INSERT field count mismatch - Expected: 63, Got: {}, AssetId: {}",
                     index, rowMap.get("assetId"));
             throw new IllegalStateException(String.format(
-                    "INSERT field count mismatch: expected 62, got %d", index));
+                    "INSERT field count mismatch: expected 63, got %d", index));
         }
 
         return args;
     }
 
     private Object[] buildUpdateArgs(Map<String, Object> rowMap, Date newDate, SimpleDateFormat format) {
-        Object[] args = new Object[62]; // 61 SET fields + 1 WHERE clause = 62 parameters
+        Object[] args = new Object[63]; // 62 SET fields + 1 WHERE clause = 62 parameters
         int index = 0;
 
         // SET clause fields (61 fields - all except assetId which is in WHERE clause)
@@ -408,15 +409,16 @@ public class FarReportService {
         args[index++] = String.valueOf(rowMap.getOrDefault("financialApproval", ""));
         args[index++] = newDate; // changedDate
         args[index++] = String.valueOf(rowMap.getOrDefault("nodeType", ""));
+        args[index++] = String.valueOf(rowMap.getOrDefault("mapped", ""));
 
         // WHERE clause - assetId
         args[index++] = String.valueOf(rowMap.get("assetId"));
 
-        if (index != 62) {
-            LOGGER.error("FATAL: UPDATE field count mismatch - Expected: 62, Got: {}, AssetId: {}",
+        if (index != 63) {
+            LOGGER.error("FATAL: UPDATE field count mismatch - Expected: 63, Got: {}, AssetId: {}",
                     index, rowMap.get("assetId"));
             throw new IllegalStateException(String.format(
-                    "UPDATE field count mismatch: expected 62, got %d", index));
+                    "UPDATE field count mismatch: expected 63, got %d", index));
         }
 
         return args;
@@ -565,82 +567,6 @@ public class FarReportService {
             return null;
         }
     }
-
-
-    public void exportToExcel(OutputStream outputStream, String column, String value, String operator) throws IOException {
-        Specification<tb_FarReport> spec = createSpecification(column, value, operator);
-        long total = repository.count(spec);
-        LOGGER.info("Total records to export: {}", total);
-
-        int batchSize = 50000; // increase to reduce DB round-trips; tune as needed
-        int pages = (int) ((total + batchSize - 1) / batchSize);
-
-        // Use a buffered output stream for better network performance (caller may already wrap, but double-buffer is fine)
-        BufferedOutputStream bos = (outputStream instanceof BufferedOutputStream)
-                ? (BufferedOutputStream) outputStream
-                : new BufferedOutputStream(outputStream, 32 * 1024);
-
-        // Create a fastexcel workbook that writes directly to the provided output stream.
-        Workbook workbook = new Workbook(bos, "Far Reports", "1.0");
-        Worksheet sheet = workbook.newWorksheet("Sheet1");
-
-        // Write header row first
-        int currentRow = 0;
-        for (int col = 0; col < EXPECTED_FIELDS.length; col++) {
-            sheet.value(currentRow, col, EXPECTED_FIELDS[col]);
-        }
-        currentRow++; // next row for data
-
-        // Fetch page-by-page and write rows immediately to the worksheet
-        for (int page = 0; page < pages; page++) {
-            long startTime = System.currentTimeMillis();
-            Pageable pageable = PageRequest.of(page, batchSize, Sort.by("recordNo").ascending());
-            Page<tb_FarReport> batchPage = repository.findAll(spec, pageable);
-            List<tb_FarReport> batchContent = batchPage.getContent();
-            long timeTaken = System.currentTimeMillis() - startTime;
-            LOGGER.info("Fetched batch {} / {} in {} ms ({} records)", page + 1, pages, timeTaken, batchContent.size());
-
-            // write rows for this batch
-            for (tb_FarReport entity : batchContent) {
-                BeanWrapper beanWrapper = new BeanWrapperImpl(entity);
-                for (int col = 0; col < EXPECTED_FIELDS.length; col++) {
-                    String field = EXPECTED_FIELDS[col];
-                    Object val = beanWrapper.getPropertyValue(field);
-
-                    // fastexcel's Worksheet has overloaded value methods for different types
-                    if (val == null) {
-                        sheet.value(currentRow, col, "");
-                    } else if (val instanceof java.util.Date) {
-                        sheet.value(currentRow, col, (java.util.Date) val);
-                    } else if (val instanceof Number) {
-                        // double is safe for numeric values
-                        sheet.value(currentRow, col, ((Number) val).doubleValue());
-                    } else if (val instanceof Boolean) {
-                        sheet.value(currentRow, col, (Boolean) val);
-                    } else {
-                        sheet.value(currentRow, col, val.toString());
-                    }
-                }
-                currentRow++;
-            }
-
-            // flush rows to underlying stream to ensure bytes are sent progressively
-            sheet.flush();
-
-            // optional: log progress
-            LOGGER.info("Wrote up to row {} (after batch {})", currentRow, page + 1);
-        }
-
-        // finish workbook (writes any remaining parts and closes the package)
-        workbook.finish();
-
-        // flush final buffers
-        bos.flush();
-
-        LOGGER.info("Export completed successfully with {} records.", total);
-    }
-
-
 
     private Specification<tb_FarReport> createSpecification(String column, String value, String operator) {
         return (root, query, cb) -> {

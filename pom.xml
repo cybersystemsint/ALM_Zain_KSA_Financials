@@ -16,18 +16,15 @@
     <description>This is a service that reads Huawei Boards from the dumps</description>
     <properties>
         <java.version>8</java.version>
+        <!-- EasyExcel 3.2.1 uses POI 5.2.2 - must match exactly -->
+        <poi.version>5.2.2</poi.version>
     </properties>
     <dependencies>
-        <!-- Apache POI for Excel export -->
+        <!-- EasyExcel - Let it manage POI dependencies -->
         <dependency>
-            <groupId>org.apache.poi</groupId>
-            <artifactId>poi</artifactId>
-            <version>4.1.2</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.poi</groupId>
-            <artifactId>poi-ooxml</artifactId>
-            <version>4.1.2</version>
+            <groupId>com.alibaba</groupId>
+            <artifactId>easyexcel</artifactId>
+            <version>3.2.1</version>
         </dependency>
 
         <!-- Apache Commons CSV -->
@@ -36,21 +33,18 @@
             <artifactId>commons-csv</artifactId>
             <version>1.9.0</version>
         </dependency>
-        <dependency>
-            <groupId>org.apache.poi</groupId>
-            <artifactId>poi</artifactId>
-            <version>5.2.3</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.poi</groupId>
-            <artifactId>poi-ooxml</artifactId>
-            <version>5.2.3</version>
-        </dependency>
+
         <dependency>
             <groupId>com.opencsv</groupId>
             <artifactId>opencsv</artifactId>
-            <version>5.5</version> <!-- Use the latest version -->
-        </dependency>          
+            <version>5.5</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.poi</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -77,7 +71,7 @@
             <version>3.6.3</version>
             <type>jar</type>
         </dependency>
-       
+
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
@@ -91,15 +85,14 @@
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
-
         </dependency>
         <dependency>
             <groupId>javax.persistence</groupId>
             <artifactId>javax.persistence-api</artifactId>
             <version>2.2</version>
             <type>jar</type>
-        </dependency>    
-      
+        </dependency>
+
         <dependency>
             <groupId>org.hibernate</groupId>
             <artifactId>hibernate-entitymanager</artifactId>
@@ -131,6 +124,8 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
+
+        <!-- FastExcel - Alternative, doesn't use POI -->
         <dependency>
             <groupId>org.dhatim</groupId>
             <artifactId>fastexcel</artifactId>
@@ -139,7 +134,7 @@
 
     </dependencies>
     <build>
-        <finalName>alm_zain_ksa_financials</finalName>  
+        <finalName>alm_zain_ksa_financials</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
@@ -157,14 +152,22 @@
                     </dependency>
                 </dependencies>
             </plugin>
-            
-            <plugin> 
-                <groupId>org.apache.maven.plugins</groupId> 
-                <artifactId>maven-surefire-plugin</artifactId> 
-                <version>2.19.1</version> 
-                <configuration> 
-                    <testFailureIgnore>true</testFailureIgnore> 
-                </configuration> 
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>2.19.1</version>
+                <configuration>
+                    <testFailureIgnore>true</testFailureIgnore>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>15</source>
+                    <target>15</target>
+                </configuration>
             </plugin>
         </plugins>
     </build>
