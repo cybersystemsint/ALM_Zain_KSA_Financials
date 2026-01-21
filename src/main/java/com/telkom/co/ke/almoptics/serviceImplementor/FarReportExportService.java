@@ -3,6 +3,7 @@ package com.telkom.co.ke.almoptics.serviceImplementor;
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.ExcelWriter;
 import com.alibaba.excel.write.metadata.WriteSheet;
+import com.telkom.co.ke.almoptics.dto.FarReportExportRequest;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,7 @@ import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class FarReportExportService {
@@ -23,6 +25,9 @@ public class FarReportExportService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    // ============================================================================
+    // CONSTANTS
+    // ============================================================================
     public static final String[] EXPECTED_FIELDS = {
             "recordNo", "recordDatetime", "serialNumber", "tagNumber", "assetId", "assetType", "nodeType",
             "datePlacedInService", "cost", "salvageValue", "poNumber", "createdDate", "category",
@@ -33,147 +38,405 @@ public class FarReportExportService {
             "depreciationDate", "netCost"
     };
 
-    private static final int LOG_INTERVAL = 50000;
-    private static final int BATCH_SIZE = 1000;
-    private static final int MAX_ROWS_PER_SHEET = 1_000_000; // Leave room for header + safety margin
+    private static final int LOG_INTERVAL = 100_000;
+    private static final int BATCH_SIZE = 5_000;
+    private static final int MAX_ROWS_PER_SHEET = 1_000_000;
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
-    public void exportToExcelOptimized(OutputStream outputStream, String column, String value, String operator) throws IOException {
+    // ============================================================================
+    // PUBLIC API - Advanced Filtering (POST with JSON)
+    // ============================================================================
+    /**
+     * Export FAR Report with advanced filtering support
+     * Supports multiple filters with different operators, pagination, and streaming
+     *
+     * @param outputStream The output stream to write Excel data to
+     * @param request The export request containing filters and pagination
+     * @throws IOException if export fails
+     */
+    public void exportToExcelWithAdvancedFilters(OutputStream outputStream, FarReportExportRequest request)
+            throws IOException {
 
+        // ========================================================================
+        // 1. BUILD SQL QUERY
+        // ========================================================================
         String selectColumns = String.join(", ", EXPECTED_FIELDS);
         String baseSql = "SELECT " + selectColumns + " FROM tb_FarReport";
         List<Object> params = new ArrayList<>();
-        String whereClause = buildWhereClause(column, value, operator, params);
 
+        String whereClause = buildAdvancedWhereClause(request, params);
         String fullSql = baseSql + (whereClause.isEmpty() ? "" : " WHERE " + whereClause);
 
-        jdbcTemplate.setFetchSize(Integer.MIN_VALUE);
-        logger.info("Starting export with SQL: {}", fullSql);
+        // ✅ Add ORDER BY for consistent pagination and reliable exports
+        fullSql += " ORDER BY recordNo";
 
+        // Add pagination if requested
+        if (request.getPage() != null && request.getSize() != null && request.getSize() > 0) {
+            int offset = request.getPage() * request.getSize();
+            fullSql += " LIMIT ? OFFSET ?";
+            params.add(request.getSize());
+            params.add(offset);
+        }
+
+        logger.info("=== Starting FAR Report Export ===");
+        logger.info("SQL Query: {}", fullSql);
+        logger.info("Parameters: {}", params);
+
+        // ========================================================================
+        // 2. EXECUTE STREAMING EXPORT
+        // ========================================================================
         long startTime = System.currentTimeMillis();
+        AtomicLong processedRows = new AtomicLong(0);
 
-        try (ExcelWriter excelWriter = EasyExcel.write(outputStream).build()) {
+        try {
+            // ✅ Set streaming mode BEFORE query execution
+            jdbcTemplate.setFetchSize(Integer.MIN_VALUE);
 
-            List<List<String>> headers = new ArrayList<>();
-            headers.add(Arrays.asList(EXPECTED_FIELDS));
+            executeStreamingExport(outputStream, fullSql, params.toArray(), processedRows);
 
-            // Use AtomicInteger and holder class for effectively final variables
-            AtomicInteger currentSheetIndex = new AtomicInteger(0);
-            AtomicInteger rowsInCurrentSheet = new AtomicInteger(0);
-            AtomicInteger totalRows = new AtomicInteger(0);
-
-            // Holder for current sheet (since WriteSheet is mutable)
-            class SheetHolder {
-                WriteSheet sheet;
-            }
-            final SheetHolder currentSheetHolder = new SheetHolder();
-
-            List<List<Object>> batch = new ArrayList<>();
-
-            // Create first sheet
-            currentSheetHolder.sheet = createSheet(excelWriter, headers, currentSheetIndex.get());
-
-            jdbcTemplate.query(fullSql, params.toArray(), rs -> {
-                while (rs.next()) {
-                    List<Object> row = new ArrayList<>();
-
-                    for (int col = 1; col <= EXPECTED_FIELDS.length; col++) {
-                        Object val = rs.getObject(col);
-                        if (val instanceof Date) {
-                            val = DATE_FORMAT.format((Date) val);
-                        }
-                        row.add(val);
-                    }
-
-                    batch.add(row);
-                    totalRows.incrementAndGet();
-                    rowsInCurrentSheet.incrementAndGet();
-
-                    // Check if we need to switch sheets
-                    if (rowsInCurrentSheet.get() >= MAX_ROWS_PER_SHEET) {
-                        // Write current batch to current sheet
-                        if (!batch.isEmpty()) {
-                            excelWriter.write(new ArrayList<>(batch), currentSheetHolder.sheet);
-                            batch.clear();
-                        }
-
-                        // Create new sheet
-                        int newSheetIndex = currentSheetIndex.incrementAndGet();
-                        currentSheetHolder.sheet = createSheet(excelWriter, headers, newSheetIndex);
-                        rowsInCurrentSheet.set(0);
-
-                        logger.info("Created new sheet {} (Sheet {} exceeded {} rows)",
-                                currentSheetHolder.sheet.getSheetName(), newSheetIndex, MAX_ROWS_PER_SHEET);
-                    }
-
-                    // Write batch when it reaches BATCH_SIZE
-                    if (batch.size() >= BATCH_SIZE) {
-                        excelWriter.write(new ArrayList<>(batch), currentSheetHolder.sheet);
-                        batch.clear();
-                    }
-
-                    // Log progress
-                    if (totalRows.get() % LOG_INTERVAL == 0) {
-                        logger.info("Processed {} rows (Current sheet: {}, Rows in sheet: {})",
-                                totalRows.get(),
-                                currentSheetHolder.sheet.getSheetName(),
-                                rowsInCurrentSheet.get());
-                    }
-                }
-                return null;
-            });
-
-            // Write remaining batch to current sheet
-            if (!batch.isEmpty()) {
-                excelWriter.write(batch, currentSheetHolder.sheet);
-            }
-
+            // ========================================================================
+            // 3. LOG SUCCESS METRICS
+            // ========================================================================
             long duration = System.currentTimeMillis() - startTime;
-            logger.info("Export completed. Total rows: {}, Duration: {} ms, Sheets created: {}",
-                    totalRows.get(), duration, currentSheetIndex.get() + 1);
+            double durationSeconds = duration / 1000.0;
+            double rowsPerSecond = duration > 0 ? (processedRows.get() * 1000.0 / duration) : 0;
+
+            logger.info("=== Export Completed Successfully ===");
+            logger.info("Total Rows: {}", processedRows.get());
+            logger.info("Duration: {:.2f} seconds ({} ms)", durationSeconds, duration);
+            logger.info("Throughput: {:.2f} rows/second", rowsPerSecond);
+            logger.info("=====================================");
 
         } catch (Exception e) {
-            logger.error("Export failed", e);
-            throw new IOException("Failed to export data: " + e.getMessage(), e);
+            long duration = System.currentTimeMillis() - startTime;
+            logger.error("=== Export Failed ===");
+            logger.error("Rows processed before failure: {}", processedRows.get());
+            logger.error("Duration before failure: {} ms", duration);
+            logger.error("Error: {}", e.getMessage(), e);
+            logger.error("====================");
+
+            throw new IOException("Failed to export FAR Report data: " + e.getMessage(), e);
+
         } finally {
+            // ✅ Always reset fetch size
             jdbcTemplate.setFetchSize(0);
         }
     }
 
-    private WriteSheet createSheet(ExcelWriter excelWriter, List<List<String>> headers, int sheetIndex) {
-        String sheetName = String.format("FAR_Data_Sheet_%d", sheetIndex + 1);
-        WriteSheet sheet = EasyExcel.writerSheet(sheetName).build();
+    // ============================================================================
+    // PUBLIC API - Legacy Simple Filtering (GET with query params)
+    // ============================================================================
+    /**
+     * Legacy export method with single filter support
+     * Converts parameters to new request format and delegates to advanced method
+     *
+     * @param outputStream The output stream to write Excel data to
+     * @param column The column to filter on (optional)
+     * @param value The value to filter by (optional)
+     * @param operator The operator to use (default: equals)
+     * @throws IOException if export fails
+     */
+    public void exportToExcelOptimized(OutputStream outputStream, String column, String value, String operator)
+            throws IOException {
 
-        // Write headers for new sheet
-        excelWriter.write(headers, sheet);
+        // Convert legacy parameters to new request format
+        FarReportExportRequest request = new FarReportExportRequest();
 
-        return sheet;
-    }
-
-    private String buildWhereClause(String column, String value, String operator, List<Object> params) {
-        if (column == null || column.isEmpty() || value == null || value.isEmpty()) {
-            return "";
+        if (column != null && !column.isEmpty() && value != null && !value.isEmpty()) {
+            Map<String, FarReportExportRequest.FilterCriteria> filterBy = new HashMap<>();
+            FarReportExportRequest.FilterCriteria criteria = new FarReportExportRequest.FilterCriteria();
+            criteria.setOperator(operator != null ? operator : "equals");
+            criteria.setValue(value);
+            filterBy.put(column, criteria);
+            request.setFilterBy(filterBy);
         }
 
-        String normalizedColumn = column.trim();
-        if (!Arrays.asList(EXPECTED_FIELDS).contains(normalizedColumn)) {
-            logger.warn("Invalid column: {}", column);
-            throw new IllegalArgumentException("Invalid column: " + column);
+        // Delegate to advanced method
+        exportToExcelWithAdvancedFilters(outputStream, request);
+    }
+
+    // ============================================================================
+    // PRIVATE METHODS - Core Export Logic
+    // ============================================================================
+
+    /**
+     * Execute the streaming export with proper batching and multi-sheet support
+     */
+    private void executeStreamingExport(OutputStream outputStream, String sql, Object[] params,
+                                        AtomicLong totalRowsCounter) throws IOException {
+
+        try (ExcelWriter excelWriter = EasyExcel.write(outputStream)
+                .useDefaultStyle(false)  // ✅ Disable default styling for better performance
+                .build()) {
+
+            // Prepare headers
+            List<List<String>> headers = Collections.singletonList(Arrays.asList(EXPECTED_FIELDS));
+
+            // Sheet management
+            AtomicInteger currentSheetIndex = new AtomicInteger(0);
+            AtomicInteger rowsInCurrentSheet = new AtomicInteger(0);
+
+            // ✅ Use array to hold mutable WriteSheet reference (for lambda access)
+            final WriteSheet[] currentSheet = new WriteSheet[1];
+
+            // Batch buffer
+            final List<List<Object>> batch = new ArrayList<>(BATCH_SIZE);
+
+            // Create first sheet
+            currentSheet[0] = createSheet(excelWriter, headers, currentSheetIndex.get());
+
+            // ========================================================================
+            // Stream and process rows
+            // ========================================================================
+            jdbcTemplate.query(sql, params, rs -> {
+                // Extract row data
+                List<Object> row = new ArrayList<>(EXPECTED_FIELDS.length);
+
+                for (int col = 1; col <= EXPECTED_FIELDS.length; col++) {
+                    Object val = rs.getObject(col);
+
+                    // Format dates consistently
+                    if (val instanceof Date) {
+                        val = DATE_FORMAT.format((Date) val);
+                    }
+
+                    row.add(val);
+                }
+
+                // Add to batch
+                batch.add(row);
+
+                // Update counters
+                long currentTotal = totalRowsCounter.incrementAndGet();
+                int currentSheetRows = rowsInCurrentSheet.incrementAndGet();
+
+                // ====================================================================
+                // Check if we need a new sheet (Excel 1M row limit)
+                // ====================================================================
+                if (currentSheetRows >= MAX_ROWS_PER_SHEET) {
+                    // Write remaining batch to current sheet
+                    if (!batch.isEmpty()) {
+                        excelWriter.write(batch, currentSheet[0]);
+                        batch.clear();
+                    }
+
+                    // Create new sheet
+                    int newSheetIndex = currentSheetIndex.incrementAndGet();
+                    currentSheet[0] = createSheet(excelWriter, headers, newSheetIndex);
+                    rowsInCurrentSheet.set(0);
+
+                    logger.info("Created sheet {} after processing {} total rows",
+                            newSheetIndex + 1, currentTotal);
+                }
+
+                // ====================================================================
+                // Write batch when full (performance optimization)
+                // ====================================================================
+                if (batch.size() >= BATCH_SIZE) {
+                    excelWriter.write(batch, currentSheet[0]);
+                    batch.clear();
+                }
+
+                // ====================================================================
+                // Progress logging
+                // ====================================================================
+                if (currentTotal % LOG_INTERVAL == 0) {
+                    logger.info("Progress: Processed {} rows", currentTotal);
+                }
+            });
+
+            // ========================================================================
+            // Write final batch
+            // ========================================================================
+            if (!batch.isEmpty()) {
+                excelWriter.write(batch, currentSheet[0]);
+                batch.clear();
+            }
+
+            logger.info("Total sheets created: {}", currentSheetIndex.get() + 1);
+
+        } catch (Exception e) {
+            logger.error("Error during streaming export", e);
+            throw new IOException("Streaming export failed: " + e.getMessage(), e);
+        }
+    }
+
+    // ============================================================================
+    // PRIVATE METHODS - SQL Building
+    // ============================================================================
+
+    /**
+     * Build WHERE clause from advanced filter request
+     * Supports both new filterBy map and legacy columnName/searchQuery
+     */
+    private String buildAdvancedWhereClause(FarReportExportRequest request, List<Object> params) {
+        List<String> conditions = new ArrayList<>();
+
+        // ========================================================================
+        // Handle filterBy map (multiple filters with operators)
+        // ========================================================================
+        if (request.getFilterBy() != null && !request.getFilterBy().isEmpty()) {
+            for (Map.Entry<String, FarReportExportRequest.FilterCriteria> entry :
+                    request.getFilterBy().entrySet()) {
+
+                String column = entry.getKey();
+                FarReportExportRequest.FilterCriteria criteria = entry.getValue();
+
+                // Validate column name (security check)
+                if (!Arrays.asList(EXPECTED_FIELDS).contains(column)) {
+                    logger.warn("Invalid column in filterBy ignored: {}", column);
+                    continue;
+                }
+
+                String condition = buildCondition(column, criteria.getValue(),
+                        criteria.getOperator(), params);
+                if (condition != null && !condition.isEmpty()) {
+                    conditions.add(condition);
+                }
+            }
+        }
+
+        // ========================================================================
+        // Handle legacy columnName and searchQuery
+        // ========================================================================
+        if (request.getColumnName() != null && !request.getColumnName().isEmpty() &&
+                request.getSearchQuery() != null && !request.getSearchQuery().isEmpty()) {
+
+            if (Arrays.asList(EXPECTED_FIELDS).contains(request.getColumnName())) {
+                String condition = buildCondition(request.getColumnName(),
+                        request.getSearchQuery(),
+                        "contains", params);
+                if (condition != null && !condition.isEmpty()) {
+                    conditions.add(condition);
+                }
+            }
+        }
+
+        return conditions.isEmpty() ? "" : String.join(" AND ", conditions);
+    }
+
+    /**
+     * Build single SQL condition based on operator
+     * Uses parameterized queries to prevent SQL injection
+     */
+    private String buildCondition(String column, String value, String operator, List<Object> params) {
+        if (value == null || value.trim().isEmpty()) {
+            return "";
         }
 
         String op = operator == null ? "equals" : operator.toLowerCase();
 
-        if ("equals".equals(op)) {
-            params.add(value);
-            return normalizedColumn + " = ?";
-        } else if ("like".equals(op)) {
-            params.add("%" + value + "%");
-            return normalizedColumn + " LIKE ?";
-        } else if ("contains".equals(op)) {
-            params.add("%" + value + "%");
-            return "LOWER(" + normalizedColumn + ") LIKE LOWER(?)";
-        } else {
-            throw new IllegalArgumentException("Unsupported operator: " + operator);
+        switch (op) {
+            case "equals":
+                params.add(value);
+                return column + " = ?";
+
+            case "like":
+            case "contains":
+                params.add("%" + value + "%");
+                return column + " LIKE ?";
+
+            case "startswith":
+            case "startsWith":
+                params.add(value + "%");
+                return column + " LIKE ?";
+
+            case "endswith":
+            case "endsWith":
+                params.add("%" + value);
+                return column + " LIKE ?";
+
+            case "greaterthan":
+            case "greaterThan":
+            case "gt":
+                params.add(value);
+                return column + " > ?";
+
+            case "lessthan":
+            case "lessThan":
+            case "lt":
+                params.add(value);
+                return column + " < ?";
+
+            case "greaterthanorequal":
+            case "greaterThanOrEqual":
+            case "gte":
+                params.add(value);
+                return column + " >= ?";
+
+            case "lessthanorequal":
+            case "lessThanOrEqual":
+            case "lte":
+                params.add(value);
+                return column + " <= ?";
+
+            case "notequals":
+            case "notEquals":
+            case "ne":
+                params.add(value);
+                return column + " != ?";
+
+            case "in":
+                String[] values = value.split(",");
+                if (values.length == 0) {
+                    return "";
+                }
+                String placeholders = String.join(",", Collections.nCopies(values.length, "?"));
+                for (String v : values) {
+                    params.add(v.trim());
+                }
+                return column + " IN (" + placeholders + ")";
+
+            case "notin":
+            case "notIn":
+                String[] notInValues = value.split(",");
+                if (notInValues.length == 0) {
+                    return "";
+                }
+                String notInPlaceholders = String.join(",", Collections.nCopies(notInValues.length, "?"));
+                for (String v : notInValues) {
+                    params.add(v.trim());
+                }
+                return column + " NOT IN (" + notInPlaceholders + ")";
+
+            case "isnull":
+            case "isNull":
+                return column + " IS NULL";
+
+            case "isnotnull":
+            case "isNotNull":
+                return column + " IS NOT NULL";
+
+            case "between":
+                // Expects value format: "min,max"
+                String[] betweenValues = value.split(",");
+                if (betweenValues.length == 2) {
+                    params.add(betweenValues[0].trim());
+                    params.add(betweenValues[1].trim());
+                    return column + " BETWEEN ? AND ?";
+                }
+                logger.warn("Invalid BETWEEN value format for column {}: {}", column, value);
+                return "";
+
+            default:
+                logger.warn("Unsupported operator '{}' for column '{}', ignoring condition", operator, column);
+                return "";
         }
+    }
+
+    /**
+     * Create new Excel sheet with headers
+     */
+    private WriteSheet createSheet(ExcelWriter excelWriter, List<List<String>> headers, int sheetIndex) {
+        String sheetName = String.format("FAR_Data_Sheet_%d", sheetIndex + 1);
+
+        WriteSheet sheet = EasyExcel.writerSheet(sheetIndex, sheetName)
+                .needHead(true)
+                .build();
+
+        // Write headers to the sheet
+        excelWriter.write(headers, sheet);
+
+        return sheet;
     }
 }
