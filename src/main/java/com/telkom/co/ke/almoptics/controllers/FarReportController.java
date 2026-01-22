@@ -1,4 +1,5 @@
 package com.telkom.co.ke.almoptics.controllers;
+import com.telkom.co.ke.almoptics.dto.FarReportExportRequest;
 import com.telkom.co.ke.almoptics.entities.tb_FarReport;
 import com.telkom.co.ke.almoptics.repository.FarReportRepository;
 import com.telkom.co.ke.almoptics.serviceImplementor.FarReportExportService;
@@ -172,444 +173,140 @@ public class FarReportController {
         return farReportService.processUpload(data, "CSV");
     }
 
+    /**
+     * Filter FAR Reports with advanced multi-criteria support
+     * POST /api/far-reports/filterFarReports
+     */
     @PostMapping("/filterFarReports")
     @CrossOrigin(origins = "*", allowedHeaders = "*", maxAge = 3600)
     public ResponseEntity<Map<String, Object>> filterFarReports(
-            @RequestBody Map<String, String> filters,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "100") int size,
+            @RequestBody FarReportExportRequest request,
             @RequestParam(defaultValue = "recordNo") String sortBy,
-            @RequestParam(defaultValue = "asc") String sortDir) {
+            @RequestParam(defaultValue = "desc") String sortDir) {
+
         try {
-            // Validate page and size
-            page = Math.max(page, 0);
-            size = Math.max(size, 1);
+            LOGGER.info("=== FAR Report Filter Request ===");
+            LOGGER.info("Request: {}", request);
 
-            // Initialize WHERE clause and parameters
-            String whereClause = " WHERE 1=1";
-            List<Object> params = new ArrayList<>();
+            // Extract pagination from request body (not query params)
+            int page = request.getPage() != null ? request.getPage() : 0;
+            int size = request.getSize() != null ? request.getSize() : 100;
 
-            // Build WHERE clause for filters
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            // Validate request
+            validateFilterRequest(request, page, size, sortBy);
 
-            // String filters (all string columns)
-            if (filters.containsKey("book") && !filters.get("book").isEmpty()) {
-                whereClause += " AND FR.book = ?";
-                params.add(filters.get("book"));
-            }
-            if (filters.containsKey("assetId") && !filters.get("assetId").isEmpty()) {
-                whereClause += " AND FR.assetId = ?";
-                params.add(filters.get("assetId"));
-            }
-            if (filters.containsKey("description") && !filters.get("description").isEmpty()) {
-                whereClause += " AND FR.description = ?";
-                params.add(filters.get("description"));
-            }
-            if (filters.containsKey("assetType") && !filters.get("assetType").isEmpty()) {
-                whereClause += " AND FR.assetType = ?";
-                params.add(filters.get("assetType"));
-            }
-            if (filters.containsKey("serialNumber") && !filters.get("serialNumber").isEmpty()) {
-                whereClause += " AND FR.serialNumber = ?";
-                params.add(filters.get("serialNumber"));
-            }
-            if (filters.containsKey("tagNumber") && !filters.get("tagNumber").isEmpty()) {
-                whereClause += " AND FR.tagNumber = ?";
-                params.add(filters.get("tagNumber"));
-            }
-            if (filters.containsKey("picStatus") && !filters.get("picStatus").isEmpty()) {
-                whereClause += " AND FR.picStatus = ?";
-                params.add(filters.get("picStatus"));
-            }
-            if (filters.containsKey("linkId") && !filters.get("linkId").isEmpty()) {
-                whereClause += " AND FR.linkId = ?";
-                params.add(filters.get("linkId"));
-            }
-            if (filters.containsKey("acceptanceNumber") && !filters.get("acceptanceNumber").isEmpty()) {
-                whereClause += " AND FR.acceptanceNumber = ?";
-                params.add(filters.get("acceptanceNumber"));
-            }
-            if (filters.containsKey("depreciateFlag") && !filters.get("depreciateFlag").isEmpty()) {
-                whereClause += " AND FR.depreciateFlag = ?";
-                params.add(filters.get("depreciateFlag"));
-            }
-            if (filters.containsKey("cipEu") && !filters.get("cipEu").isEmpty()) {
-                whereClause += " AND FR.cipEu = ?";
-                params.add(filters.get("cipEu"));
-            }
-            if (filters.containsKey("invoiceNumber") && !filters.get("invoiceNumber").isEmpty()) {
-                whereClause += " AND FR.invoiceNumber = ?";
-                params.add(filters.get("invoiceNumber"));
-            }
-            if (filters.containsKey("poNumber") && !filters.get("poNumber").isEmpty()) {
-                whereClause += " AND FR.poNumber = ?";
-                params.add(filters.get("poNumber"));
-            }
-            if (filters.containsKey("poLineNumber") && !filters.get("poLineNumber").isEmpty()) {
-                whereClause += " AND FR.poLineNumber = ?";
-                params.add(filters.get("poLineNumber"));
-            }
-            if (filters.containsKey("uplLine") && !filters.get("uplLine").isEmpty()) {
-                whereClause += " AND FR.uplLine = ?";
-                params.add(filters.get("uplLine"));
-            }
-            if (filters.containsKey("transferToNewFar") && !filters.get("transferToNewFar").isEmpty()) {
-                whereClause += " AND FR.transferToNewFar = ?";
-                params.add(filters.get("transferToNewFar"));
-            }
-            if (filters.containsKey("assetStatus") && !filters.get("assetStatus").isEmpty()) {
-                whereClause += " AND FR.assetStatus = ?";
-                params.add(filters.get("assetStatus"));
-            }
-            if (filters.containsKey("partNumber") && !filters.get("partNumber").isEmpty()) {
-                whereClause += " AND FR.partNumber = ?";
-                params.add(filters.get("partNumber"));
-            }
-            if (filters.containsKey("vendorName") && !filters.get("vendorName").isEmpty()) {
-                whereClause += " AND FR.vendorName = ?";
-                params.add(filters.get("vendorName"));
-            }
-            if (filters.containsKey("vendorNumber") && !filters.get("vendorNumber").isEmpty()) {
-                whereClause += " AND FR.vendorNumber = ?";
-                params.add(filters.get("vendorNumber"));
-            }
-            if (filters.containsKey("mergedCode") && !filters.get("mergedCode").isEmpty()) {
-                whereClause += " AND FR.mergedCode = ?";
-                params.add(filters.get("mergedCode"));
-            }
-            if (filters.containsKey("costAccount") && !filters.get("costAccount").isEmpty()) {
-                whereClause += " AND FR.costAccount = ?";
-                params.add(filters.get("costAccount"));
-            }
-            if (filters.containsKey("accumulatedDepreAccount") && !filters.get("accumulatedDepreAccount").isEmpty()) {
-                whereClause += " AND FR.accumulatedDepreAccount = ?";
-                params.add(filters.get("accumulatedDepreAccount"));
-            }
-            if (filters.containsKey("cipCostAccount") && !filters.get("cipCostAccount").isEmpty()) {
-                whereClause += " AND FR.cipCostAccount = ?";
-                params.add(filters.get("cipCostAccount"));
-            }
-            if (filters.containsKey("expenseCostCenter") && !filters.get("expenseCostCenter").isEmpty()) {
-                whereClause += " AND FR.expenseCostCenter = ?";
-                params.add(filters.get("expenseCostCenter"));
-            }
-            if (filters.containsKey("expenseAccount") && !filters.get("expenseAccount").isEmpty()) {
-                whereClause += " AND FR.expenseAccount = ?";
-                params.add(filters.get("expenseAccount"));
-            }
-            if (filters.containsKey("category") && !filters.get("category").isEmpty()) {
-                whereClause += " AND FR.category = ?";
-                params.add(filters.get("category"));
-            }
-            if (filters.containsKey("categoryDescription") && !filters.get("categoryDescription").isEmpty()) {
-                whereClause += " AND FR.categoryDescription = ?";
-                params.add(filters.get("categoryDescription"));
-            }
-            if (filters.containsKey("locationSegment1") && !filters.get("locationSegment1").isEmpty()) {
-                whereClause += " AND FR.locationSegment1 = ?";
-                params.add(filters.get("locationSegment1"));
-            }
-            if (filters.containsKey("locationSegment2") && !filters.get("locationSegment2").isEmpty()) {
-                whereClause += " AND FR.locationSegment2 = ?";
-                params.add(filters.get("locationSegment2"));
-            }
-            if (filters.containsKey("locationSegment3") && !filters.get("locationSegment3").isEmpty()) {
-                whereClause += " AND FR.locationSegment3 = ?";
-                params.add(filters.get("locationSegment3"));
-            }
-            if (filters.containsKey("locationSegment4") && !filters.get("locationSegment4").isEmpty()) {
-                whereClause += " AND FR.locationSegment4 = ?";
-                params.add(filters.get("locationSegment4"));
-            }
-            if (filters.containsKey("locations") && !filters.get("locations").isEmpty()) {
-                whereClause += " AND FR.locations = ?";
-                params.add(filters.get("locations"));
-            }
-            if (filters.containsKey("createdBy") && !filters.get("createdBy").isEmpty()) {
-                whereClause += " AND FR.createdBy = ?";
-                params.add(filters.get("createdBy"));
-            }
-            if (filters.containsKey("updatedBy") && !filters.get("updatedBy").isEmpty()) {
-                whereClause += " AND FR.updatedBy = ?";
-                params.add(filters.get("updatedBy"));
-            }
-            if (filters.containsKey("statusFlag") && !filters.get("statusFlag").isEmpty()) {
-                whereClause += " AND FR.statusFlag = ?";
-                params.add(filters.get("statusFlag"));
-            }
-            if (filters.containsKey("changedBy") && !filters.get("changedBy").isEmpty()) {
-                whereClause += " AND FR.changedBy = ?";
-                params.add(filters.get("changedBy"));
-            }
-            if (filters.containsKey("insertedBy") && !filters.get("insertedBy").isEmpty()) {
-                whereClause += " AND FR.insertedBy = ?";
-                params.add(filters.get("insertedBy"));
-            }
-            if (filters.containsKey("financialApproval") && !filters.get("financialApproval").isEmpty()) {
-                whereClause += " AND FR.financialApproval = ?";
-                params.add(filters.get("financialApproval"));
-            }
-            if (filters.containsKey("nodeType") && !filters.get("nodeType").isEmpty()) {
-                whereClause += " AND FR.nodeType = ?";
-                params.add(filters.get("nodeType"));
-            }
-            if (filters.containsKey("mapped") && !filters.get("mapped").isEmpty()) {
-                whereClause += " AND FR.mapped = ?";
-                params.add(filters.get("mapped"));
+            if (request.getFilterBy() != null && !request.getFilterBy().isEmpty()) {
+                LOGGER.info("Filters applied: {} filter(s)", request.getFilterBy().size());
+                request.getFilterBy().forEach((column, criteria) ->
+                        LOGGER.info("  - {}: {} {}", column, criteria.getOperator(), criteria.getValue())
+                );
+            } else {
+                LOGGER.info("No filters applied - returning all records");
             }
 
-            // Integer numeric filters (whole numbers: quantity, life, sequenceNumber)
-            if (filters.containsKey("quantity") && !filters.get("quantity").isEmpty()) {
-                try {
-                    Integer value = Integer.parseInt(filters.get("quantity"));
-                    whereClause += " AND FR.quantity = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid quantity format: " + filters.get("quantity"), e);
-                }
-            }
-            if (filters.containsKey("life") && !filters.get("life").isEmpty()) {
-                try {
-                    Integer value = Integer.parseInt(filters.get("life"));
-                    whereClause += " AND FR.life = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid life format: " + filters.get("life"), e);
-                }
-            }
-            if (filters.containsKey("sequenceNumber") && !filters.get("sequenceNumber").isEmpty()) {
-                try {
-                    Integer value = Integer.parseInt(filters.get("sequenceNumber"));
-                    whereClause += " AND FR.sequenceNumber = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid sequenceNumber format: " + filters.get("sequenceNumber"), e);
-                }
-            }
+            // Call service
+            Map<String, Object> response = farReportService.filterFarReportsAdvanced(
+                    request, page, size, sortBy, sortDir);
 
-            // Double numeric filters (all other numerics: value, cost, nbv, etc.)
-            if (filters.containsKey("value") && !filters.get("value").isEmpty()) {
-                try {
-                    Double value = Double.parseDouble(filters.get("value"));
-                    whereClause += " AND FR.value = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid value format: " + filters.get("value"), e);
-                }
-            }
-            if (filters.containsKey("cost") && !filters.get("cost").isEmpty()) {
-                try {
-                    Double value = Double.parseDouble(filters.get("cost"));
-                    whereClause += " AND FR.cost = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid cost format: " + filters.get("cost"), e);
-                }
-            }
-            if (filters.containsKey("nbv") && !filters.get("nbv").isEmpty()) {
-                try {
-                    Double value = Double.parseDouble(filters.get("nbv"));
-                    whereClause += " AND FR.nbv = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid nbv format: " + filters.get("nbv"), e);
-                }
-            }
-            if (filters.containsKey("depreciationAmount") && !filters.get("depreciationAmount").isEmpty()) {
-                try {
-                    Double value = Double.parseDouble(filters.get("depreciationAmount"));
-                    whereClause += " AND FR.depreciationAmount = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid depreciationAmount format: " + filters.get("depreciationAmount"), e);
-                }
-            }
-            if (filters.containsKey("ytdDepreciation") && !filters.get("ytdDepreciation").isEmpty()) {
-                try {
-                    Double value = Double.parseDouble(filters.get("ytdDepreciation"));
-                    whereClause += " AND FR.ytdDepreciation = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid ytdDepreciation format: " + filters.get("ytdDepreciation"), e);
-                }
-            }
-            if (filters.containsKey("depreciationReserve") && !filters.get("depreciationReserve").isEmpty()) {
-                try {
-                    Double value = Double.parseDouble(filters.get("depreciationReserve"));
-                    whereClause += " AND FR.depreciationReserve = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid depreciationReserve format: " + filters.get("depreciationReserve"), e);
-                }
-            }
-            if (filters.containsKey("salvageValue") && !filters.get("salvageValue").isEmpty()) {
-                try {
-                    Double value = Double.parseDouble(filters.get("salvageValue"));
-                    whereClause += " AND FR.salvageValue = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid salvageValue format: " + filters.get("salvageValue"), e);
-                }
-            }
-            if (filters.containsKey("monthlyDepreciationAmt") && !filters.get("monthlyDepreciationAmt").isEmpty()) {
-                try {
-                    Double value = Double.parseDouble(filters.get("monthlyDepreciationAmt"));
-                    whereClause += " AND FR.monthlyDepreciationAmt = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid monthlyDepreciationAmt format: " + filters.get("monthlyDepreciationAmt"), e);
-                }
-            }
-            if (filters.containsKey("accumulatedDepreciationAmt") && !filters.get("accumulatedDepreciationAmt").isEmpty()) {
-                try {
-                    Double value = Double.parseDouble(filters.get("accumulatedDepreciationAmt"));
-                    whereClause += " AND FR.accumulatedDepreciationAmt = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid accumulatedDepreciationAmt format: " + filters.get("accumulatedDepreciationAmt"), e);
-                }
-            }
-            if (filters.containsKey("netCost") && !filters.get("netCost").isEmpty()) {
-                try {
-                    Double value = Double.parseDouble(filters.get("netCost"));
-                    whereClause += " AND FR.netCost = ?";
-                    params.add(value);
-                } catch (NumberFormatException e) {
-                    LOGGER.error("Invalid netCost format: " + filters.get("netCost"), e);
-                }
-            }
+            // Even safer - handles null gracefully
+            Object dataObj = response.get("data");
+            int recordCount = (dataObj instanceof List) ? ((List<?>) dataObj).size() : 0;
+            LOGGER.info("Filter completed. {} records returned", recordCount);
 
-            // Date range filters (for all date columns: recordDatetime, creationDate, picDate, cipDeliveryDate, createdDate, updatedDate, datePlacedInService, depreciationDate, changedDate)
-            try {
-                // recordDatetime
-                if (filters.containsKey("recordDatetimeStart") && !filters.get("recordDatetimeStart").isEmpty()) {
-                    whereClause += " AND FR.recordDatetime >= ?";
-                    params.add(filters.get("recordDatetimeStart"));
-                }
-                if (filters.containsKey("recordDatetimeEnd") && !filters.get("recordDatetimeEnd").isEmpty()) {
-                    whereClause += " AND FR.recordDatetime <= ?";
-                    params.add(filters.get("recordDatetimeEnd"));
-                }
-                // creationDate
-                if (filters.containsKey("creationDateStart") && !filters.get("creationDateStart").isEmpty()) {
-                    whereClause += " AND FR.creationDate >= ?";
-                    params.add(filters.get("creationDateStart"));
-                }
-                if (filters.containsKey("creationDateEnd") && !filters.get("creationDateEnd").isEmpty()) {
-                    whereClause += " AND FR.creationDate <= ?";
-                    params.add(filters.get("creationDateEnd"));
-                }
-                // picDate
-                if (filters.containsKey("picDateStart") && !filters.get("picDateStart").isEmpty()) {
-                    whereClause += " AND FR.picDate >= ?";
-                    params.add(filters.get("picDateStart"));
-                }
-                if (filters.containsKey("picDateEnd") && !filters.get("picDateEnd").isEmpty()) {
-                    whereClause += " AND FR.picDate <= ?";
-                    params.add(filters.get("picDateEnd"));
-                }
-                // cipDeliveryDate
-                if (filters.containsKey("cipDeliveryDateStart") && !filters.get("cipDeliveryDateStart").isEmpty()) {
-                    whereClause += " AND FR.cipDeliveryDate >= ?";
-                    params.add(filters.get("cipDeliveryDateStart"));
-                }
-                if (filters.containsKey("cipDeliveryDateEnd") && !filters.get("cipDeliveryDateEnd").isEmpty()) {
-                    whereClause += " AND FR.cipDeliveryDate <= ?";
-                    params.add(filters.get("cipDeliveryDateEnd"));
-                }
-                // createdDate
-                if (filters.containsKey("createdDateStart") && !filters.get("createdDateStart").isEmpty()) {
-                    whereClause += " AND FR.createdDate >= ?";
-                    params.add(filters.get("createdDateStart"));
-                }
-                if (filters.containsKey("createdDateEnd") && !filters.get("createdDateEnd").isEmpty()) {
-                    whereClause += " AND FR.createdDate <= ?";
-                    params.add(filters.get("createdDateEnd"));
-                }
-                // updatedDate
-                if (filters.containsKey("updatedDateStart") && !filters.get("updatedDateStart").isEmpty()) {
-                    whereClause += " AND FR.updatedDate >= ?";
-                    params.add(filters.get("updatedDateStart"));
-                }
-                if (filters.containsKey("updatedDateEnd") && !filters.get("updatedDateEnd").isEmpty()) {
-                    whereClause += " AND FR.updatedDate <= ?";
-                    params.add(filters.get("updatedDateEnd"));
-                }
-                // datePlacedInService
-                if (filters.containsKey("datePlacedInServiceStart") && !filters.get("datePlacedInServiceStart").isEmpty()) {
-                    whereClause += " AND FR.datePlacedInService >= ?";
-                    params.add(filters.get("datePlacedInServiceStart"));
-                }
-                if (filters.containsKey("datePlacedInServiceEnd") && !filters.get("datePlacedInServiceEnd").isEmpty()) {
-                    whereClause += " AND FR.datePlacedInService <= ?";
-                    params.add(filters.get("datePlacedInServiceEnd"));
-                }
-                // depreciationDate
-                if (filters.containsKey("depreciationDateStart") && !filters.get("depreciationDateStart").isEmpty()) {
-                    whereClause += " AND FR.depreciationDate >= ?";
-                    params.add(filters.get("depreciationDateStart"));
-                }
-                if (filters.containsKey("depreciationDateEnd") && !filters.get("depreciationDateEnd").isEmpty()) {
-                    whereClause += " AND FR.depreciationDate <= ?";
-                    params.add(filters.get("depreciationDateEnd"));
-                }
-                // changedDate
-                if (filters.containsKey("changedDateStart") && !filters.get("changedDateStart").isEmpty()) {
-                    whereClause += " AND FR.changedDate >= ?";
-                    params.add(filters.get("changedDateStart"));
-                }
-                if (filters.containsKey("changedDateEnd") && !filters.get("changedDateEnd").isEmpty()) {
-                    whereClause += " AND FR.changedDate <= ?";
-                    params.add(filters.get("changedDateEnd"));
-                }
-            } catch (Exception e) {
-                LOGGER.error("Error parsing date filters", e);
-            }
-
-            // Count total records
-            String countSql = "SELECT COUNT(*) FROM `tb_FarReport` FR" + whereClause;
-            int totalRecords = jdbcTemplate.queryForObject(countSql, params.toArray(), Integer.class);
-
-            // Build pagination
-            String paginationSql = "";
-            if (size > 0) {
-                int offset = page * size;
-                paginationSql = " LIMIT ? OFFSET ?";
-                params.add(size);
-                params.add(offset);
-            }
-
-            // Build sorting
-            String orderBy = "";
-            if (!sortBy.isEmpty()) {
-                orderBy = " ORDER BY FR." + sortBy + (sortDir.equalsIgnoreCase("asc") ? " ASC" : " DESC");
-            }
-
-            // Main query (all columns via SELECT *)
-            String sql = "SELECT * FROM `tb_FarReport` FR" + whereClause + orderBy + paginationSql;
-
-            List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, params.toArray());
-
-            // Prepare response
-            Map<String, Object> response = new HashMap<>();
-            response.put("reports", result); // Match frontend's expected key
-            response.put("currentPage", page);
-            response.put("totalItems", totalRecords);
-            response.put("totalPages", (int) Math.ceil((double) totalRecords / size));
-            response.put("first", page == 0);
-            response.put("last", result.size() < size || (page + 1) * size >= totalRecords);
-            response.put("size", size);
-            response.put("sort", sortBy + "," + sortDir);
-
-            LOGGER.info("Far Report Filter Query: " + sql);
             return new ResponseEntity<>(response, HttpStatus.OK);
+
+        } catch (IllegalArgumentException e) {
+            LOGGER.error("Invalid filter request: {}", e.getMessage());
+            return new ResponseEntity<>(
+                    Collections.singletonMap("message", "Invalid filter parameters: " + e.getMessage()),
+                    HttpStatus.BAD_REQUEST
+            );
         } catch (Exception e) {
             LOGGER.error("Error filtering FAR reports", e);
-            return new ResponseEntity<>(Collections.singletonMap("message", "Error filtering FAR reports: " + e.getMessage()),
-                    HttpStatus.INTERNAL_SERVER_ERROR);
+            return new ResponseEntity<>(
+                    Collections.singletonMap("message", "Error filtering FAR reports: " + e.getMessage()),
+                    HttpStatus.INTERNAL_SERVER_ERROR
+            );
         }
     }
 
+    /**
+     * Validate filter request parameters
+     */
+    private void validateFilterRequest(FarReportExportRequest request, int page, int size, String sortBy) {
+
+        // Validate pagination
+        if (page < 0) {
+            throw new IllegalArgumentException("Page number cannot be negative");
+        }
+
+        if (size <= 0 || size > 10000) {
+            throw new IllegalArgumentException("Page size must be between 1 and 10,000");
+        }
+
+        // Validate sort column
+        if (!Arrays.asList(FarReportService.EXPECTED_FIELDS).contains(sortBy) && !"recordNo".equals(sortBy)) {
+            throw new IllegalArgumentException("Invalid sort column: " + sortBy);
+        }
+
+        // Validate filters
+        if (request.getFilterBy() != null && !request.getFilterBy().isEmpty()) {
+
+            if (request.getFilterBy().size() > 20) {
+                throw new IllegalArgumentException(
+                        "Maximum 20 filters allowed. Current: " + request.getFilterBy().size()
+                );
+            }
+
+            for (Map.Entry<String, FarReportExportRequest.FilterCriteria> entry :
+                    request.getFilterBy().entrySet()) {
+
+                String column = entry.getKey();
+                FarReportExportRequest.FilterCriteria criteria = entry.getValue();
+
+                // Validate column name
+                if (!Arrays.asList(FarReportService.EXPECTED_FIELDS).contains(column)) {
+                    throw new IllegalArgumentException("Invalid column name: " + column);
+                }
+
+                // Validate operator
+                if (criteria.getOperator() != null && !isValidOperator(criteria.getOperator())) {
+                    throw new IllegalArgumentException(
+                            "Invalid operator: " + criteria.getOperator() + " for column: " + column
+                    );
+                }
+
+                // Validate value length
+                if (criteria.getValue() != null && criteria.getValue().length() > 500) {
+                    throw new IllegalArgumentException(
+                            "Filter value too long for column: " + column + " (max 500 characters)"
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Validate operator (reuse from export controller or create shared utility)
+     */
+    private boolean isValidOperator(String operator) {
+        if (operator == null || operator.trim().isEmpty()) {
+            return false;
+        }
+
+        String[] validOperators = {
+                "equals", "like", "contains", "startsWith", "startswith", "endsWith", "endswith",
+                "greaterThan", "greaterthan", "gt", "lessThan", "lessthan", "lt",
+                "greaterThanOrEqual", "greaterthanorequal", "gte",
+                "lessThanOrEqual", "lessthanorequal", "lte",
+                "notEquals", "notequals", "ne",
+                "in", "notIn", "notin",
+                "isNull", "isnull", "isNotNull", "isnotnull",
+                "between"
+        };
+
+        return Arrays.asList(validOperators).contains(operator);
+    }
 
     @GetMapping("/export/far-report")
     public void exportFarReport(HttpServletResponse response) {
