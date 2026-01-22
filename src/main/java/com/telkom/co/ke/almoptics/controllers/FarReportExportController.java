@@ -142,28 +142,36 @@ public class FarReportExportController {
     }
 
     // ============================================================================
-    // VALIDATION METHODS
+        // VALIDATION METHODS
     // ============================================================================
 
     private void validateExportRequest(FarReportExportRequest request) {
 
-        // Validate pagination
+        // ========================================================================
+        // Validate pagination (if used)
+        // ========================================================================
         if (request.getSize() != null) {
+            // User is requesting paginated export
             if (request.getSize() <= 0) {
                 throw new IllegalArgumentException("Page size must be greater than 0");
             }
+
+            // Limit per PAGE, not total dataset
             if (request.getSize() > 1_000_000) {
                 throw new IllegalArgumentException(
-                        "Page size cannot exceed 1,000,000 rows. Current: " + request.getSize()
+                        "Page size cannot exceed 1,000,000 rows per page. Current: " + request.getSize()
                 );
             }
         }
+        // Note: If size is null, unlimited export is allowed (handles via multi-sheet)
 
         if (request.getPage() != null && request.getPage() < 0) {
             throw new IllegalArgumentException("Page number cannot be negative");
         }
 
-        // Validate filters
+        // ========================================================================
+             // Validate filters
+        // ========================================================================
         if (request.getFilterBy() != null && !request.getFilterBy().isEmpty()) {
 
             if (request.getFilterBy().size() > 10) {
@@ -196,7 +204,9 @@ public class FarReportExportController {
             }
         }
 
-        // Validate format
+        // ========================================================================
+                // Validate format
+        // ========================================================================
         if (request.getFormat() != null && !request.getFormat().equalsIgnoreCase("excel")) {
             throw new IllegalArgumentException(
                     "Unsupported format: " + request.getFormat() + ". Only 'excel' is supported."
@@ -223,7 +233,8 @@ public class FarReportExportController {
                 "lessThanOrEqual", "lessthanorequal", "lte",
                 "notEquals", "notequals", "ne",
                 "in", "notIn", "notin",
-                "isNull", "isnull", "isNotNull", "isnotnull"
+                "isNull", "isnull", "isNotNull", "isnotnull",
+                "between"
         };
 
         return Arrays.asList(validOperators).contains(operator);
