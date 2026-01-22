@@ -67,7 +67,7 @@ public class FarReportExportService {
         String whereClause = buildAdvancedWhereClause(request, params);
         String fullSql = baseSql + (whereClause.isEmpty() ? "" : " WHERE " + whereClause);
 
-        // ✅ Add ORDER BY for consistent pagination and reliable exports
+        //  Add ORDER BY for consistent pagination and reliable exports
         fullSql += " ORDER BY recordNo";
 
         // Add pagination if requested
@@ -89,26 +89,34 @@ public class FarReportExportService {
         AtomicLong processedRows = new AtomicLong(0);
 
         try {
-            // ✅ Set streaming mode BEFORE query execution
             jdbcTemplate.setFetchSize(Integer.MIN_VALUE);
 
-            executeStreamingExport(outputStream, fullSql, params.toArray(), processedRows);
+            executeStreamingExport(outputStream, fullSql, params.toArray(), processedRows, request);
 
-            // ========================================================================
-            // 3. LOG SUCCESS METRICS
-            // ========================================================================
             long duration = System.currentTimeMillis() - startTime;
             double durationSeconds = duration / 1000.0;
             double rowsPerSecond = duration > 0 ? (processedRows.get() * 1000.0 / duration) : 0;
 
             logger.info("=== Export Completed Successfully ===");
             logger.info("Total Rows: {}", processedRows.get());
-            logger.info("Duration: {:.2f} seconds ({} ms)", durationSeconds, duration);
-            logger.info("Throughput: {:.2f} rows/second", rowsPerSecond);
+            logger.info("Duration: {} seconds ({} ms)",
+                    String.format("%.2f", durationSeconds), duration);
+            logger.info("Throughput: {} rows/second",
+                    String.format("%.2f", rowsPerSecond));
             logger.info("=====================================");
 
-        } catch (Exception e) {
+        } catch (IOException e) {
             long duration = System.currentTimeMillis() - startTime;
+
+            // Check if it's a client disconnect - don't log as error
+            if (isClientDisconnectError(e)) {
+                logger.warn("Export processing completed ({} rows, {} ms) but client disconnected during file transfer",
+                        processedRows.get(), duration);
+                // Exit gracefully - don't throw
+                return;
+            }
+
+            // Real errors
             logger.error("=== Export Failed ===");
             logger.error("Rows processed before failure: {}", processedRows.get());
             logger.error("Duration before failure: {} ms", duration);
@@ -118,12 +126,11 @@ public class FarReportExportService {
             throw new IOException("Failed to export FAR Report data: " + e.getMessage(), e);
 
         } finally {
-            // ✅ Always reset fetch size
             jdbcTemplate.setFetchSize(0);
         }
     }
 
-    // ============================================================================
+        // ============================================================================
     // PUBLIC API - Legacy Simple Filtering (GET with query params)
     // ============================================================================
     /**
@@ -163,10 +170,10 @@ public class FarReportExportService {
      * Execute the streaming export with proper batching and multi-sheet support
      */
     private void executeStreamingExport(OutputStream outputStream, String sql, Object[] params,
-                                        AtomicLong totalRowsCounter) throws IOException {
+                                        AtomicLong totalRowsCounter, FarReportExportRequest request) throws IOException {
 
         try (ExcelWriter excelWriter = EasyExcel.write(outputStream)
-                .useDefaultStyle(false)  // ✅ Disable default styling for better performance
+                .useDefaultStyle(false)
                 .build()) {
 
             // Prepare headers
@@ -176,11 +183,16 @@ public class FarReportExportService {
             AtomicInteger currentSheetIndex = new AtomicInteger(0);
             AtomicInteger rowsInCurrentSheet = new AtomicInteger(0);
 
-            // ✅ Use array to hold mutable WriteSheet reference (for lambda access)
+            // Use array to hold mutable WriteSheet reference (for lambda access)
             final WriteSheet[] currentSheet = new WriteSheet[1];
 
             // Batch buffer
             final List<List<Object>> batch = new ArrayList<>(BATCH_SIZE);
+
+            // Extract pagination limit from request
+            final Integer maxRows = (request != null && request.getSize() != null && request.getSize() > 0)
+                    ? request.getSize()
+                    : null;
 
             // Create first sheet
             currentSheet[0] = createSheet(excelWriter, headers, currentSheetIndex.get());
@@ -189,6 +201,14 @@ public class FarReportExportService {
             // Stream and process rows
             // ========================================================================
             jdbcTemplate.query(sql, params, rs -> {
+
+                // Enforce pagination limit manually (MySQL streaming can ignore LIMIT clause)
+                long currentTotal = totalRowsCounter.get();
+                if (maxRows != null && currentTotal >= maxRows) {
+                    logger.info("Reached pagination limit of {} rows, stopping stream", maxRows);
+                    return; // Stop processing more rows
+                }
+
                 // Extract row data
                 List<Object> row = new ArrayList<>(EXPECTED_FIELDS.length);
 
@@ -207,7 +227,7 @@ public class FarReportExportService {
                 batch.add(row);
 
                 // Update counters
-                long currentTotal = totalRowsCounter.incrementAndGet();
+                long newTotal = totalRowsCounter.incrementAndGet();
                 int currentSheetRows = rowsInCurrentSheet.incrementAndGet();
 
                 // ====================================================================
@@ -226,7 +246,7 @@ public class FarReportExportService {
                     rowsInCurrentSheet.set(0);
 
                     logger.info("Created sheet {} after processing {} total rows",
-                            newSheetIndex + 1, currentTotal);
+                            newSheetIndex + 1, newTotal);
                 }
 
                 // ====================================================================
@@ -235,13 +255,21 @@ public class FarReportExportService {
                 if (batch.size() >= BATCH_SIZE) {
                     excelWriter.write(batch, currentSheet[0]);
                     batch.clear();
+
+                    // Periodic flush to keep client connection alive
+                    try {
+                        outputStream.flush();
+                    } catch (IOException e) {
+                        logger.warn("Client disconnected during data streaming at {} rows", newTotal);
+                        throw new RuntimeException("Client disconnected", e);
+                    }
                 }
 
                 // ====================================================================
                 // Progress logging
                 // ====================================================================
-                if (currentTotal % LOG_INTERVAL == 0) {
-                    logger.info("Progress: Processed {} rows", currentTotal);
+                if (newTotal % LOG_INTERVAL == 0) {
+                    logger.info("Progress: Processed {} rows", newTotal);
                 }
             });
 
@@ -254,11 +282,90 @@ public class FarReportExportService {
             }
 
             logger.info("Total sheets created: {}", currentSheetIndex.get() + 1);
+            logger.info("Data processing complete. Finalizing Excel file...");
 
         } catch (Exception e) {
+
+            // Check if this is a client disconnect (broken pipe)
+            if (isClientDisconnectError(e)) {
+                logger.warn("=== Client Disconnected During Export ===");
+                logger.warn("Rows successfully processed: {}", totalRowsCounter.get());
+                logger.warn("Client likely timed out or cancelled download during Excel finalization");
+                logger.warn("This is not a server error - data processing completed successfully");
+                logger.warn("=========================================");
+                // Don't throw exception - export was successful, client just disconnected
+                return;
+            }
+
+            // Real errors
             logger.error("Error during streaming export", e);
             throw new IOException("Streaming export failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Helper method to check if exception is caused by client disconnect
+     */
+    private boolean isClientDisconnectError(Throwable throwable) {
+        if (throwable == null) {
+            return false;
+        }
+
+        // Check current exception
+        String message = throwable.getMessage();
+        if (message != null) {
+            // Common patterns for client disconnect
+            if (message.contains("Broken pipe") ||
+                    message.contains("Client disconnected") ||
+                    message.contains("Connection reset") ||
+                    message.contains("Can not close IO")) {  // EasyExcel wraps broken pipe
+                return true;
+            }
+        }
+
+        // Check exception type
+        String className = throwable.getClass().getName();
+        if (className.contains("ExcelGenerateException")) {
+            // Check if root cause is broken pipe
+            Throwable rootCause = getRootCause(throwable);
+            if (rootCause != null) {
+                String rootMessage = rootCause.getMessage();
+                if (rootMessage != null &&
+                        (rootMessage.contains("Broken pipe") ||
+                                rootMessage.contains("Connection reset"))) {
+                    return true;
+                }
+                // Check for NullPointerException in OutputBuffer (indicates client disconnect)
+                if (rootCause instanceof NullPointerException &&
+                        rootMessage != null &&
+                        rootMessage.contains("OutputBuffer")) {
+                    return true;
+                }
+            }
+        }
+
+        // Recursively check cause chain
+        Throwable cause = throwable.getCause();
+        if (cause != null && cause != throwable) {
+            return isClientDisconnectError(cause);
+        }
+
+        return false;
+    }
+
+    /**
+     * Helper method to find root cause of exception
+     */
+    private Throwable getRootCause(Throwable throwable) {
+        if (throwable == null) {
+            return null;
+        }
+
+        Throwable cause = throwable;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause;
     }
 
     // ============================================================================

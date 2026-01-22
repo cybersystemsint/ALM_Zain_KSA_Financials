@@ -82,7 +82,9 @@ public class FarReportExportController {
                 double durationSeconds = duration / 1000.0;
 
                 logger.info("=== Export Completed Successfully ===");
-                logger.info("Duration: {:.2f} seconds ({} ms)", durationSeconds, duration);
+                // Use String.format instead of Python-style formatting
+                logger.info("Duration: {} seconds ({} ms)",
+                        String.format("%.2f", durationSeconds), duration);
                 logger.info("File: {}", fileName);
                 logger.info("=====================================");
 
