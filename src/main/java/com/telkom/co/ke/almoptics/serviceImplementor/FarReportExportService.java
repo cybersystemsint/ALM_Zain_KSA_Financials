@@ -29,13 +29,17 @@ public class FarReportExportService {
     // CONSTANTS
     // ============================================================================
     public static final String[] EXPECTED_FIELDS = {
-            "recordNo", "recordDatetime", "serialNumber", "tagNumber", "assetId", "assetType", "nodeType",
-            "datePlacedInService", "cost", "salvageValue", "poNumber", "createdDate", "category",
-            "locationSegment1", "locationSegment2", "locationSegment3", "locationSegment4",
-            "accumulatedDepreAccount", "costAccount", "life",
-            "vendorName", "vendorNumber", "locations", "value", "invoiceNumber", "linkId", "poLineNumber",
-            "monthlyDepreciationAmt", "accumulatedDepreciationAmt", "statusFlag",
-            "depreciationDate", "netCost"
+            "recordNo", "recordDatetime", "serialNumber", "tagNumber", "assetId", "assetType", "description", "nodeType", "datePlacedInService", "cost",
+            "salvageValue", "poNumber", "createdDate", "category",
+            "locationSegment1", "locationSegment2", "locationSegment3", "locationSegment4", "accumulatedDepreAccount", "costAccount", "life",
+            "vendorName", "vendorNumber", "locations", "value", "invoiceNumber", "linkId", "poLineNumber", "monthlyDepreciationAmt",
+            "accumulatedDepreciationAmt", "statusFlag",
+            "depreciationDate", "netCost",  "book", "quantity", "assetStatus", "partNumber", "nbv", "depreciationAmount", "ytdDepreciation",
+            "depreciationReserve", "categoryDescription",
+            "creationDate", "picStatus", "picDate", "cipDeliveryDate", "acceptanceNumber",
+            "depreciateFlag", "cipEu", "uplLine", "transferToNewFar", "mergedCode", "cipCostAccount", "expenseCostCenter", "expenseAccount",
+            "sequenceNumber", "createdBy", "updatedBy",
+            "changedBy", "insertedBy", "financialApproval", "changedDate", "mapped"
     };
 
     private static final int LOG_INTERVAL = 100_000;
