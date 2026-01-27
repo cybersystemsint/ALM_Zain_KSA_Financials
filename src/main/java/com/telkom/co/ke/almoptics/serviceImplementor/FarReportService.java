@@ -589,7 +589,6 @@ public class FarReportService {
         };
     }
     // Added this to FarReportService.java for multifilter
-
     /**
      * Filter FAR Reports with advanced multi-criteria support and summary calculations
      * Response format matches /fetch-finance-report for consistency
@@ -626,7 +625,12 @@ public class FarReportService {
         Map<String, Object> filteredTotals = calculateFilteredTotals(whereClause, params);
 
         // ========================================================================
-        // 4. FETCH PAGINATED DATA
+        // 4. EXTRACT DATE RANGE FROM FILTERS (FIXED - was missing this call!)
+        // ========================================================================
+        Map<String, String> dateRange = extractDateRangeFromFilters(request);
+
+        // ========================================================================
+        // 5. FETCH PAGINATED DATA
         // ========================================================================
         String orderBy = String.format(" ORDER BY %s %s", sortBy, sortDir.toUpperCase());
         int offset = page * size;
@@ -646,11 +650,15 @@ public class FarReportService {
         List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, queryParams.toArray());
 
         // ========================================================================
-        // 5. PREPARE RESPONSE - USE LINKEDHASHMAP FOR ORDERED FIELDS
+        // 6. PREPARE RESPONSE - USE LINKEDHASHMAP FOR ORDERED FIELDS
         // ========================================================================
         Map<String, Object> response = new LinkedHashMap<>();
 
-        // ADD SUMMARY FIELDS FIRST (before data)
+        // ADD DATE RANGE FIRST
+        response.put("fromDate", dateRange.get("fromDate"));
+        response.put("toDate", dateRange.get("toDate"));
+
+        // ADD SUMMARY FIELDS
         response.put("totalRecords", totalRecords);
         response.put("totalDepreciation", globalTotals.get("totalAccumulatedDepreciation"));
         response.put("filteredDepreciation", filteredTotals.get("filteredAccumulatedDepreciation"));
@@ -662,13 +670,83 @@ public class FarReportService {
         response.put("totalCost", globalTotals.get("totalCost"));
         response.put("filteredCost", filteredTotals.get("filteredCost"));
 
-        // ADD DATA LAST (so it appears at the bottom)
+        // ADD DATA LAST
         response.put("data", result);
 
         LOGGER.info("Filter completed. {} records returned, {} total filtered records",
                 result.size(), totalRecords);
+        LOGGER.info("Date range: {} to {}", dateRange.get("fromDate"), dateRange.get("toDate"));
 
         return response;
+    }
+    /**
+     * Extract date range from filters for summary display
+     * Checks common date fields and operators to find date range
+     */
+    private Map<String, String> extractDateRangeFromFilters(FarReportExportRequest request) {
+        Map<String, String> dateRange = new HashMap<>();
+        dateRange.put("fromDate", "");
+        dateRange.put("toDate", "");
+
+        if (request.getFilterBy() == null || request.getFilterBy().isEmpty()) {
+            return dateRange;
+        }
+
+        // Check for common date fields with range operators
+        String[] dateFields = {
+                "recordDatetime", "creationDate", "picDate", "cipDeliveryDate",
+                "createdDate", "updatedDate", "datePlacedInService",
+                "depreciationDate", "changedDate"
+        };
+
+        // Track if we found any date filters
+        boolean foundDateFilter = false;
+
+        for (String dateField : dateFields) {
+            FarReportExportRequest.FilterCriteria criteria = request.getFilterBy().get(dateField);
+
+            if (criteria != null && criteria.getValue() != null && !criteria.getValue().isEmpty()) {
+                String operator = criteria.getOperator() != null ? criteria.getOperator().toLowerCase() : "";
+                String value = criteria.getValue();
+
+                if ("between".equals(operator)) {
+                    // Format: "2024-01-01,2024-12-31"
+                    String[] dates = value.split(",");
+                    if (dates.length == 2) {
+                        dateRange.put("fromDate", dates[0].trim());
+                        dateRange.put("toDate", dates[1].trim());
+                        foundDateFilter = true;
+                        break;
+                    }
+                } else if ("gte".equals(operator) || "greaterthanorequal".equals(operator)) {
+                    dateRange.put("fromDate", value.trim());
+                    foundDateFilter = true;
+                } else if ("lte".equals(operator) || "lessthanorequal".equals(operator)) {
+                    dateRange.put("toDate", value.trim());
+                    foundDateFilter = true;
+                } else if ("gt".equals(operator) || "greaterthan".equals(operator)) {
+                    dateRange.put("fromDate", value.trim());
+                    foundDateFilter = true;
+                } else if ("lt".equals(operator) || "lessthan".equals(operator)) {
+                    dateRange.put("toDate", value.trim());
+                    foundDateFilter = true;
+                } else if ("equals".equals(operator)) {
+                    // If exact date match, set both from and to
+                    dateRange.put("fromDate", value.trim());
+                    dateRange.put("toDate", value.trim());
+                    foundDateFilter = true;
+                }
+
+                // If we found a date filter, log it and break
+                if (foundDateFilter) {
+                    LOGGER.info("Extracted date range from field '{}': {} to {}",
+                            dateField, dateRange.get("fromDate"), dateRange.get("toDate"));
+                    break;
+                }
+            }
+        }
+
+        return dateRange;
     }
     /**
      * Calculate global totals (all records, no filters)
@@ -708,51 +786,6 @@ public class FarReportService {
 
         return totals;
     }
-
-    /**
-     * Extract date range from filters for summary display
-     */
-    private Map<String, String> extractDateRangeFromFilters(FarReportExportRequest request) {
-        Map<String, String> dateRange = new HashMap<>();
-        dateRange.put("fromDate", "");
-        dateRange.put("toDate", "");
-
-        if (request.getFilterBy() == null || request.getFilterBy().isEmpty()) {
-            return dateRange;
-        }
-
-        // Check for common date fields with range operators
-        String[] dateFields = {
-                "recordDatetime", "creationDate", "picDate", "cipDeliveryDate",
-                "createdDate", "updatedDate", "datePlacedInService",
-                "depreciationDate", "changedDate"
-        };
-
-        for (String dateField : dateFields) {
-            FarReportExportRequest.FilterCriteria criteria = request.getFilterBy().get(dateField);
-
-            if (criteria != null && criteria.getValue() != null && !criteria.getValue().isEmpty()) {
-                String operator = criteria.getOperator() != null ? criteria.getOperator().toLowerCase() : "";
-
-                if ("between".equals(operator)) {
-                    // Format: "2024-01-01,2024-12-31"
-                    String[] dates = criteria.getValue().split(",");
-                    if (dates.length == 2) {
-                        dateRange.put("fromDate", dates[0].trim());
-                        dateRange.put("toDate", dates[1].trim());
-                        break;
-                    }
-                } else if ("gte".equals(operator) || "greaterthanorequal".equals(operator)) {
-                    dateRange.put("fromDate", criteria.getValue());
-                } else if ("lte".equals(operator) || "lessthanorequal".equals(operator)) {
-                    dateRange.put("toDate", criteria.getValue());
-                }
-            }
-        }
-
-        return dateRange;
-    }
-
     /**
      * Build WHERE clause from filter request (similar to export but for filter endpoint)
      */

@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -213,20 +214,29 @@ public class FarReportExportService {
                     return; // Stop processing more rows
                 }
 
-                // Extract row data
+                // SAFE (reads by column name, not index)
                 List<Object> row = new ArrayList<>(EXPECTED_FIELDS.length);
 
-                for (int col = 1; col <= EXPECTED_FIELDS.length; col++) {
-                    Object val = rs.getObject(col);
+                for (String fieldName : EXPECTED_FIELDS) {
+                    try {
+                        Object val = rs.getObject(fieldName);
 
-                    // Format dates consistently
-                    if (val instanceof Date) {
-                        val = DATE_FORMAT.format((Date) val);
+                        // Format dates consistently
+                        if (val instanceof java.sql.Date) {
+                            val = DATE_FORMAT.format((java.sql.Date) val);
+                        } else if (val instanceof java.sql.Timestamp) {
+                            val = DATE_FORMAT.format((java.sql.Timestamp) val);
+                        }
+
+                        row.add(val);
+
+                    } catch (SQLException e) {
+                        // Field not found or null - use empty string
+                        logger.warn("Field '{}' not accessible in row {}, using null",
+                                fieldName, totalRowsCounter.get() + 1);
+                        row.add(null);
                     }
-
-                    row.add(val);
                 }
-
                 // Add to batch
                 batch.add(row);
 
@@ -404,6 +414,28 @@ public class FarReportExportService {
                 if (condition != null && !condition.isEmpty()) {
                     conditions.add(condition);
                 }
+            }
+        }
+// ========================================================================
+// Handle dateFrom / dateTo (EXPORT must match FILTER behavior)
+// ========================================================================
+        if (request.getDateFrom() != null || request.getDateTo() != null) {
+
+            // MUST match DB column name exactly
+            String dateColumn = "recordDatetime";
+
+            if (request.getDateFrom() != null && request.getDateTo() != null) {
+                conditions.add(dateColumn + " BETWEEN ? AND ?");
+                params.add(request.getDateFrom() + " 00:00:00");
+                params.add(request.getDateTo() + " 23:59:59");
+
+            } else if (request.getDateFrom() != null) {
+                conditions.add(dateColumn + " >= ?");
+                params.add(request.getDateFrom() + " 00:00:00");
+
+            } else {
+                conditions.add(dateColumn + " <= ?");
+                params.add(request.getDateTo() + " 23:59:59");
             }
         }
 

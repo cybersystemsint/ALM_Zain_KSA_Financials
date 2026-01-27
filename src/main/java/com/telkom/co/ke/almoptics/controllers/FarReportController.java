@@ -188,6 +188,8 @@ public class FarReportController {
             LOGGER.info("=== FAR Report Filter Request ===");
             LOGGER.info("Request: {}", request);
 
+            // Transform simple format to advanced format
+            transformSimpleToAdvancedFormat(request);
             // Extract pagination from request body (not query params)
             int page = request.getPage() != null ? request.getPage() : 0;
             int size = request.getSize() != null ? request.getSize() : 100;
@@ -284,6 +286,87 @@ public class FarReportController {
                 }
             }
         }
+    }
+    /**
+     * Transform simple payload format to advanced filterBy format
+     * Supports backward compatibility with legacy frontend
+     */
+    private void transformSimpleToAdvancedFormat(FarReportExportRequest request) {
+
+        // Initialize filterBy if null
+        if (request.getFilterBy() == null) {
+            request.setFilterBy(new HashMap<>());
+        }
+
+        // ========================================================================
+        // 1. TRANSFORM dateFrom/dateTo to datePlacedInService filter
+        // ========================================================================
+        String dateFrom = request.getDateFrom();
+        String dateTo = request.getDateTo();
+
+        if ((dateFrom != null && !dateFrom.trim().isEmpty()) ||
+                (dateTo != null && !dateTo.trim().isEmpty())) {
+
+            // Don't override if datePlacedInService already exists in filterBy
+            if (!request.getFilterBy().containsKey("datePlacedInService")) {
+
+                if (dateFrom != null && !dateFrom.trim().isEmpty() &&
+                        dateTo != null && !dateTo.trim().isEmpty()) {
+                    // Both dates exist - use BETWEEN
+                    LOGGER.info("Transforming dateFrom/dateTo to BETWEEN: {} to {}", dateFrom, dateTo);
+                    request.getFilterBy().put("datePlacedInService",
+                            new FarReportExportRequest.FilterCriteria("between", dateFrom + "," + dateTo));
+
+                } else if (dateFrom != null && !dateFrom.trim().isEmpty()) {
+                    // Only dateFrom - use GTE
+                    LOGGER.info("Transforming dateFrom to GTE: {}", dateFrom);
+                    request.getFilterBy().put("datePlacedInService",
+                            new FarReportExportRequest.FilterCriteria("gte", dateFrom));
+
+                } else if (dateTo != null && !dateTo.trim().isEmpty()) {
+                    // Only dateTo - use LTE
+                    LOGGER.info("Transforming dateTo to LTE: {}", dateTo);
+                    request.getFilterBy().put("datePlacedInService",
+                            new FarReportExportRequest.FilterCriteria("lte", dateTo));
+                }
+            }
+        }
+
+        // ========================================================================
+        // 2. TRANSFORM columnName/searchQuery to filterBy (legacy support)
+        // ========================================================================
+        if (request.getColumnName() != null && !request.getColumnName().trim().isEmpty() &&
+                request.getSearchQuery() != null && !request.getSearchQuery().trim().isEmpty()) {
+
+            String column = request.getColumnName().trim();
+            String query = request.getSearchQuery().trim();
+
+            // Validate column name
+            if (Arrays.asList(FarReportService.EXPECTED_FIELDS).contains(column)) {
+                // Don't override if column already exists in filterBy
+                if (!request.getFilterBy().containsKey(column)) {
+                    LOGGER.info("Transforming columnName/searchQuery to CONTAINS: {} = {}", column, query);
+                    request.getFilterBy().put(column,
+                            new FarReportExportRequest.FilterCriteria("contains", query));
+                }
+            } else {
+                LOGGER.warn("Invalid columnName ignored: {}", column);
+            }
+        }
+
+        // ========================================================================
+        // 3. TRANSFORM assetId to filterBy
+        // ========================================================================
+        if (request.getAssetId() != null && !request.getAssetId().trim().isEmpty()) {
+            // Don't override if assetId already exists in filterBy
+            if (!request.getFilterBy().containsKey("assetId")) {
+                LOGGER.info("Transforming assetId to EQUALS: {}", request.getAssetId());
+                request.getFilterBy().put("assetId",
+                        new FarReportExportRequest.FilterCriteria("equals", request.getAssetId().trim()));
+            }
+        }
+
+        LOGGER.info("After transformation, filterBy contains: {}", request.getFilterBy());
     }
 
     /**

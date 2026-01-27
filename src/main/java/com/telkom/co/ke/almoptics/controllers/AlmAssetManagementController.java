@@ -659,7 +659,14 @@ public class AlmAssetManagementController {
         if (!columnName.equalsIgnoreCase("") && !searchQuery.equalsIgnoreCase("") && !columnName.equalsIgnoreCase("recordDatetime")) {
             whereClause.append(" AND ").append(columnName.toLowerCase()).append(" LIKE ? ");
         }
+        // Date filtering logic
+        if (dateFrom != null && !dateFrom.isEmpty()) {
+            whereClause.append(" AND datePlacedInService >= ? ");
+        }
 
+        if (dateTo != null && !dateTo.isEmpty()) {
+            whereClause.append(" AND datePlacedInService <= ? ");
+        }
 
         return whereClause.toString();
     }

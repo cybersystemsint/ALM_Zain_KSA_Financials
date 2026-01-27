@@ -14,12 +14,27 @@ public class FarReportExportRequest {
     @JsonProperty("format")
     private String format = "excel";
 
+    // ========================================================================
+    // LEGACY/SIMPLE FORMAT FIELDS (for backward compatibility)
+    // ========================================================================
+    @JsonProperty("assetId")
+    private String assetId;
+
     @JsonProperty("columnName")
     private String columnName;
 
     @JsonProperty("searchQuery")
     private String searchQuery;
 
+    @JsonProperty("dateFrom")
+    private String dateFrom;
+
+    @JsonProperty("dateTo")
+    private String dateTo;
+
+    // ========================================================================
+    // ADVANCED FORMAT FIELD
+    // ========================================================================
     @JsonProperty("filterBy")
     private Map<String, FilterCriteria> filterBy;
 
@@ -52,6 +67,14 @@ public class FarReportExportRequest {
         this.format = format;
     }
 
+    public String getAssetId() {
+        return assetId;
+    }
+
+    public void setAssetId(String assetId) {
+        this.assetId = assetId;
+    }
+
     public String getColumnName() {
         return columnName;
     }
@@ -68,6 +91,22 @@ public class FarReportExportRequest {
         this.searchQuery = searchQuery;
     }
 
+    public String getDateFrom() {
+        return dateFrom;
+    }
+
+    public void setDateFrom(String dateFrom) {
+        this.dateFrom = dateFrom;
+    }
+
+    public String getDateTo() {
+        return dateTo;
+    }
+
+    public void setDateTo(String dateTo) {
+        this.dateTo = dateTo;
+    }
+
     public Map<String, FilterCriteria> getFilterBy() {
         return filterBy;
     }
@@ -82,6 +121,11 @@ public class FarReportExportRequest {
                 "page=" + page +
                 ", size=" + size +
                 ", format='" + format + '\'' +
+                ", assetId='" + assetId + '\'' +
+                ", dateFrom='" + dateFrom + '\'' +
+                ", dateTo='" + dateTo + '\'' +
+                ", columnName='" + columnName + '\'' +
+                ", searchQuery='" + searchQuery + '\'' +
                 ", filterBy=" + filterBy +
                 '}';
     }
