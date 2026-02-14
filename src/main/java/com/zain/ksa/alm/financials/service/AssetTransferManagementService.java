@@ -1,0 +1,14 @@
+package com.zain.ksa.alm.financials.service;
+
+import net.minidev.json.JSONArray;
+import net.minidev.json.JSONObject;
+
+public interface AssetTransferManagementService {
+	JSONObject transferAsset(JSONObject request);
+
+	JSONObject approveAssetTransfer(JSONObject request);
+
+	JSONArray getApprovedAssets(JSONObject request);
+
+	JSONArray getAssetsForApproval(JSONObject request);
+}
