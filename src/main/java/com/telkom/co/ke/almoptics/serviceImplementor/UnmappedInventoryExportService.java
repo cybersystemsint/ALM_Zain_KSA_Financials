@@ -47,6 +47,7 @@ public class UnmappedInventoryExportService {
                 }
             }
         }
+
         // Single search filter (always "contains")
         if (req.getSearchColumn() != null && req.getSearchQuery() != null && !req.getSearchQuery().isEmpty()) {
             if (where.length() > 0) where.append(" AND ");
@@ -63,8 +64,10 @@ public class UnmappedInventoryExportService {
         try (ExcelWriter excelWriter = EasyExcel.write(outputStream).build()) {
             logger.info("Exporting [{}] with SQL: {}", tableName, fullSql);
 
+            // displayHeaders already includes "Sequence Number" as first entry
             List<List<String>> headerRows = new ArrayList<>();
             headerRows.add(Arrays.asList(displayHeaders));
+
             AtomicInteger currentSheetIndex = new AtomicInteger(0);
             AtomicInteger rowsInCurrentSheet = new AtomicInteger(0);
             AtomicInteger totalRows = new AtomicInteger(0);
@@ -75,15 +78,20 @@ public class UnmappedInventoryExportService {
             List<List<Object>> batch = new ArrayList<>();
             currentSheetHolder.sheet = createSheet(excelWriter, headerRows, currentSheetIndex.get());
 
-          jdbcTemplate.query(fullSql, params.toArray(), rs -> {
-    if (!rs.next()) return null;
-    do {
+            jdbcTemplate.query(fullSql, params.toArray(), rs -> {
+                if (!rs.next()) return null;
+                do {
+                    int sequenceNumber = totalRows.get() + 1; // 1-based row counter
+
                     List<Object> row = new ArrayList<>();
+                    row.add(sequenceNumber); // Prepend generated sequence number
+
                     for (int col = 1; col <= columns.length; col++) {
                         Object val = rs.getObject(col);
                         if (val instanceof Date) val = DATE_FORMAT.format((Date) val);
                         row.add(val);
                     }
+
                     batch.add(row);
                     totalRows.incrementAndGet();
                     rowsInCurrentSheet.incrementAndGet();
@@ -97,10 +105,12 @@ public class UnmappedInventoryExportService {
                         currentSheetHolder.sheet = createSheet(excelWriter, headerRows, newSheetIndex);
                         rowsInCurrentSheet.set(0);
                     }
+
                     if (batch.size() >= BATCH_SIZE) {
                         excelWriter.write(new ArrayList<>(batch), currentSheetHolder.sheet);
                         batch.clear();
                     }
+
                     if (totalRows.get() % LOG_INTERVAL == 0) {
                         logger.info("Processed {} rows (Current sheet: {}, Rows in sheet: {})",
                                 totalRows.get(),
@@ -114,6 +124,7 @@ public class UnmappedInventoryExportService {
             if (!batch.isEmpty()) {
                 excelWriter.write(batch, currentSheetHolder.sheet);
             }
+
             long duration = System.currentTimeMillis() - startTime;
             logger.info("Export completed [{}]: totalRows={}, duration={}ms, sheets={}",
                     tableName, totalRows.get(), duration, currentSheetIndex.get() + 1);
