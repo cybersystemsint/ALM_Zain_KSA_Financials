@@ -59,7 +59,11 @@ public class FarReportServiceImpl implements FarReportService {
         return this.farRepo.findByAssetId(paramString);
 
     }
-
+    
+      @Override
+      public void saveAll(List<tb_FarReport> assets) {
+          farReportRepository.saveAll(assets);
+      }
 //    @Override
 //    public List<tb_FarReport> findByInventoryStatus(String paramString) {
 //        return this.farRepo.findByInventoryStatus(paramString);

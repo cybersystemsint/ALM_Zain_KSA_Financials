@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Set;
+import java.util.Collection;
 import java.util.stream.Stream;
 
 public interface FarReportRepository extends JpaRepository<tb_FarReport, Integer> {
@@ -22,6 +24,11 @@ public interface FarReportRepository extends JpaRepository<tb_FarReport, Integer
             "OR LOWER(f.description) LIKE LOWER(CONCAT('%', :searchQuery, '%')))")
     List<tb_FarReport> findBySearchQuery(String searchQuery, Pageable pageable);
 
+  boolean existsBySerialNumber(String serialNumber);
 
+@Query("SELECT f.serialNumber FROM tb_FarReport f WHERE f.serialNumber IN :serials")
+Set<String> findAllSerialNumbersBySerialNumberIn(@Param("serials") Collection<String> serials);
+  
+//     Set<String> findAllSerialNumbersBySerialNumberIn(Collection<String> serialNumbers);
 
 }
