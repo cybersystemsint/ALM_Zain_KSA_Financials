@@ -37,8 +37,9 @@ public class tb_Asset_DepreciationImplementor implements tb_Asset_DepreciationSe
     public tb_Asset_Depreciation findByAssetCode(String paramString) {
         return this.tb_Asset_DepreciationRepository.findByAssetCode(paramString);
     }
+
     @Override
-      public tb_Asset_Depreciation findByAssetCodeAndDepreciationDate(String paramString, String depreciationDate) {
-        return this.tb_Asset_DepreciationRepository.findByAssetCodeAndDepreciationDate(paramString, depreciationDate);
+    public List<tb_Asset_Depreciation> findByAssetCodeAndDepreciationDate(String assetCode, String depreciationDate) {
+        return this.tb_Asset_DepreciationRepository.findByAssetCodeAndDepreciationDate(assetCode, depreciationDate);
     }
 }

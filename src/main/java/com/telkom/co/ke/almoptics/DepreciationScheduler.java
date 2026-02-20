@@ -4,28 +4,31 @@
  */
 package com.telkom.co.ke.almoptics;
 
-import com.telkom.co.ke.almoptics.entities.tb_Asset_Depreciation;
-import com.telkom.co.ke.almoptics.entities.tb_FarReport;
-import com.telkom.co.ke.almoptics.services.AssetService;
-import com.telkom.co.ke.almoptics.services.tb_Asset_DepreciationService;
-import com.telkom.co.ke.almoptics.services.FarReportService;
-import com.telkom.co.ke.almoptics.services.FinancialReportService;
-
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
-import java.util.Calendar;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
+import com.telkom.co.ke.almoptics.entities.DepreciationHistory;
+import com.telkom.co.ke.almoptics.entities.tb_FarReport;
+import com.telkom.co.ke.almoptics.services.AssetService;
+import com.telkom.co.ke.almoptics.services.DepreciationHistoryService;
+import com.telkom.co.ke.almoptics.services.FarReportService;
+import com.telkom.co.ke.almoptics.services.FinancialReportService;
+import com.telkom.co.ke.almoptics.services.tb_Asset_DepreciationService;
 
 /**
  *
@@ -34,161 +37,128 @@ import org.springframework.data.domain.Pageable;
 @Component
 public class DepreciationScheduler {
 
-    private static final Logger LOGGER = LogManager.getLogger(DepreciationScheduler.class.getName());
+    private static final Logger LOGGER = LoggerFactory.getLogger(DepreciationScheduler.class);
+    private static final int PAGE_SIZE = 2000;
+    private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
 
-    @Autowired
-    private tb_Asset_DepreciationService tb_Asset_DepreciationService;
-
-    @Autowired
-    private AssetService assetService;
-
-    @Autowired
-    private FinancialReportService financialReportService;
 
     @Autowired
     private FarReportService farReportService;
+    @Autowired
+    private DepreciationHistoryService depreciationHistoryService;
 
-   // @Scheduled(cron = "0 0 20 * * *", zone = "Africa/Nairobi")
 
-//    @Scheduled(cron = "0 0 0 L * ?", zone = "Africa/Nairobi ") //EXECUTE AT THE LAST DAY OF THE MONTH
-  // Endmonth run
-//   @Scheduled(cron = "0 0 0 L * ?", zone = "Africa/Nairobi")
-   //UAT run 30/10/2025
-   @Scheduled(cron = "0 0 16 30 10 ?", zone = "Africa/Nairobi")
-    public void processDepreciation() {
+
+    // Run every day at 19:00:00 Africa/Nairobi
+      @Scheduled(cron = "0 00 19 * * *", zone = "Africa/Nairobi")
+     public void processDepreciation() {
+
+        if (!RUNNING.compareAndSet(false, true)) {
+            LOGGER.warn("Depreciation scheduler already running. Skipping this execution.");
+            return;
+        }
+
+        LOGGER.info("==== DEPRECIATION SCHEDULER STARTED ====");
+
         try {
-            LOGGER.info("SCHEDULER STARTED FOR DEPRECIATION");
+            LocalDate now = LocalDate.now();
+            int month = now.getMonthValue();
+            int year = now.getYear();
+
+            if (depreciationHistoryService.existsForMonth(month, year)) {
+        LOGGER.info(
+        "Depreciation history already exists for {}/{}. Skipping processing.",
+        month, year
+        );
+         return;
+        }
+
 
             int pageNumber = 0;
             Page<tb_FarReport> page;
-            int pageSize = 2500;
 
             do {
-                Pageable pageable1 = PageRequest.of(pageNumber, pageSize);
-                page = farReportService.findAll(pageable1); // Corrected method call
+                Pageable pageable = PageRequest.of(pageNumber, PAGE_SIZE);
+                page = farReportService.findAll(pageable);
 
-                List<tb_FarReport> assetsHere = page.getContent();
+                List<tb_FarReport> assets = page.getContent();
+                LOGGER.info("Processing page {} with {} records", pageNumber + 1, assets.size());
 
-                processRecords(assetsHere);
+                processRecordsSequential(assets);
+
+                List<DepreciationHistory> histories = assets.stream()
+                        .map(this::mapFarToHistory)
+                        .toList();
+
+                depreciationHistoryService.saveAll(histories);
 
                 pageNumber++;
+
             } while (page.hasNext());
 
-            LOGGER.info("SCHEDULER COMPLETED FOR DEPRECIATION");
+            LOGGER.info("==== DEPRECIATION SCHEDULER COMPLETED SUCCESSFULLY ====");
+
         } catch (Exception ex) {
-            LOGGER.error("Exception occurred during scheduled task: ", ex);
+            LOGGER.error("Depreciation scheduler failed", ex);
+        } finally {
+            RUNNING.set(false);
+        }
+    }
+    
+    private void processRecordsSequential(List<tb_FarReport> assets) {
+
+        LocalDate currentDate = LocalDate.now().withDayOfMonth(LocalDate.now().lengthOfMonth());
+        List<tb_FarReport> changedAssets = new ArrayList<>();
+
+        for (tb_FarReport asset : assets) {
+            try {
+                if (asset.getLife() <= 0 || asset.getDatePlacedInService() == null) {
+                    continue;
+                }
+
+                double cost = asset.getCost();
+                double salvage = asset.getSalvageValue();
+                int life = asset.getLife();
+
+                double monthly = asset.getDepreciationAmount() != null
+                        ? asset.getDepreciationAmount()
+                        : (cost - salvage) / life;
+
+                LocalDate inService = asset.getDatePlacedInService()
+                        .toInstant()
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDate();
+
+                long monthsUsed = ChronoUnit.MONTHS.between(
+                        inService.withDayOfMonth(1).plusMonths(1),
+                        currentDate
+                );
+
+                monthsUsed = Math.min(monthsUsed, life);
+
+                double accumulated = monthly * monthsUsed;
+                double netCost = Math.max(cost - accumulated, 0);
+
+                if (!Objects.equals(asset.getAccumulatedDepreciationAmt(), accumulated)) {
+                    asset.setMonthlyDepreciationAmt(monthly);
+                    asset.setAccumulatedDepreciationAmt(accumulated);
+                    asset.setNetCost(netCost);
+                    asset.setDepreciationDate(new Date());
+                    changedAssets.add(asset);
+                }
+
+            } catch (Exception e) {
+                LOGGER.error("Failed processing asset {}", asset.getAssetId(), e);
+            }
+        }
+
+        if (!changedAssets.isEmpty()) {
+            farReportService.saveAll(changedAssets);
         }
     }
 
-    private void processRecords(List<tb_FarReport> assetsHere) {
-        assetsHere.forEach(asset -> {
-            try {
 
-                //int currentYear = Calendar.getInstance().get(1);
-                LocalDate localDate = LocalDate.now();
-                //int purchaseYear = localDate.getYear();
-                double accumulatedDepreciation = 0.0D;
-
-                double initialCost = asset.getCost();
-                double salvageValue = asset.getSalvageValue();
-                int usefulLife = asset.getLife();
-                Date dateInservice = asset.getDatePlacedInService();
-
-                double monthlyDepreciation = asset.getDepreciationAmount() != null ? asset.getDepreciationAmount() : 0;
-                if (monthlyDepreciation == 0) {
-
-                    monthlyDepreciation = (initialCost - salvageValue) / usefulLife;
-
-                    LocalDate dateOfServiceLocal = dateInservice.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                    LocalDate dateNextMonth = dateOfServiceLocal.withDayOfMonth(1).plusMonths(1);
-                    LocalDate currentDate = LocalDate.now().withDayOfMonth(LocalDate.now().lengthOfMonth());
-
-                    //LocalDate currentDate = LocalDate.now();
-                    long numberOfMonthsUtilised = ChronoUnit.MONTHS.between(dateNextMonth, currentDate);
-
-                    numberOfMonthsUtilised = Math.min(numberOfMonthsUtilised, usefulLife);
-
-                    accumulatedDepreciation = (monthlyDepreciation * numberOfMonthsUtilised);
-
-                    double netCost = initialCost - accumulatedDepreciation;
-
-                    //LocalDate dateOfRetirement = dateNextMonth.plusMonths(usefulLife).minusDays(1);
-                    // Check if asset code exists in tb_Asset_Depreciation table
-                    tb_Asset_Depreciation tbassetDepreciation = this.tb_Asset_DepreciationService.findByAssetCodeAndDepreciationDate(asset.getAssetId(), currentDate.toString());
-                    if (tbassetDepreciation == null) {
-                        tbassetDepreciation = new tb_Asset_Depreciation();
-                        tbassetDepreciation.setAssetCode(asset.getAssetId());
-                    }
-                    // Update depreciation record
-                    tbassetDepreciation.setAssetBookValue(netCost);
-                    tbassetDepreciation.setDepreciationDate(currentDate.toString());
-                    tbassetDepreciation.setRecordDatetime(new Date());
-                    tbassetDepreciation.setAccumulatedDepreciation(accumulatedDepreciation);
-
-                    if (netCost > 0) {
-                        this.tb_Asset_DepreciationService.save(tbassetDepreciation);
-                    }
-
-                    asset.setMonthlyDepreciationAmt(monthlyDepreciation);
-                    asset.setAccumulatedDepreciationAmt(accumulatedDepreciation);
-
-                    if (netCost > 0) {
-                        asset.setNetCost(netCost);
-                    }
-
-                    asset.setDepreciationDate(new Date());
-                    this.farReportService.save(asset);
-                } else {
-                    // Calculate the number of months utilised
-                    LocalDate dateOfServiceLocal = dateInservice.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-                    LocalDate dateNextMonth = dateOfServiceLocal.withDayOfMonth(1).plusMonths(1);
-                    LocalDate currentDate = LocalDate.now().withDayOfMonth(LocalDate.now().lengthOfMonth());
-                    long numberOfMonthsUtilised = ChronoUnit.MONTHS.between(dateNextMonth, currentDate);
-
-                    // Ensure NoMU does not exceed useful life
-                    numberOfMonthsUtilised = Math.min(numberOfMonthsUtilised, usefulLife);
-
-                    accumulatedDepreciation = (monthlyDepreciation * numberOfMonthsUtilised);
-
-                    double netCost = initialCost - accumulatedDepreciation;
-
-                    double bookValue = initialCost - accumulatedDepreciation;
-
-                    tb_Asset_Depreciation tbassetDepreciation = this.tb_Asset_DepreciationService.findByAssetCodeAndDepreciationDate(asset.getAssetId(), currentDate.toString());
-                    if (tbassetDepreciation == null) {
-                        tbassetDepreciation = new tb_Asset_Depreciation();
-                        tbassetDepreciation.setAssetCode(asset.getAssetId());
-                    }
-                    // Update depreciation record
-                    tbassetDepreciation.setAssetBookValue(netCost);
-                    tbassetDepreciation.setDepreciationDate(currentDate.toString());
-                    tbassetDepreciation.setRecordDatetime(new Date());
-                    tbassetDepreciation.setAssetBookValue(bookValue);
-                    tbassetDepreciation.setAccumulatedDepreciation(accumulatedDepreciation);
-
-                    if (netCost > 0) {
-                        this.tb_Asset_DepreciationService.save(tbassetDepreciation);
-                    }
-
-                    asset.setMonthlyDepreciationAmt(monthlyDepreciation);
-                    asset.setAccumulatedDepreciationAmt(accumulatedDepreciation);
-                    if (netCost > 0) {
-                        asset.setNetCost(netCost);
-                    }
-
-                    asset.setDepreciationDate(new Date());
-                    this.farReportService.save(asset);
-
-                }
-
-            } catch (Exception ex) {
-
-                LOGGER.info("Exception: ", ex);
-            }
-        });
-    }
-
-    public double calculateSalvageValue(double initialCost, double accumulatedDepreciation) {
+public double calculateSalvageValue(double initialCost, double accumulatedDepreciation) {
         double salvageValue = initialCost - accumulatedDepreciation;
         return salvageValue;
     }
@@ -211,4 +181,77 @@ public class DepreciationScheduler {
         }
         return bookValue;
     }
+
+/**
+ * Maps a tb_FarReport entity to a DepreciationHistory entity
+ */
+private DepreciationHistory mapFarToHistory(tb_FarReport far) {
+    DepreciationHistory history = new DepreciationHistory();
+    history.setAssetId(far.getAssetId());
+    history.setBook(far.getBook());
+    history.setQuantity(far.getQuantity());
+    history.setDescription(far.getDescription());
+    history.setCreationDate(far.getCreationDate());
+    history.setSerialNumber(far.getSerialNumber());
+    history.setAssetType(far.getAssetType());
+    history.setTagNumber(far.getTagNumber());
+    history.setPicStatus(far.getPicStatus());
+    history.setPicDate(far.getPicDate());
+    history.setCipDeliveryDate(far.getCipDeliveryDate());
+    history.setLinkId(far.getLinkId());
+    history.setAcceptanceNumber(far.getAcceptanceNumber());
+    history.setDepreciateFlag(far.getDepreciateFlag());
+    history.setCipEu(far.getCipEu());
+    history.setInvoiceNumber(far.getInvoiceNumber());
+    history.setPoNumber(far.getPoNumber());
+    history.setPoLineNumber(far.getPoLineNumber());
+    history.setUplLine(far.getUplLine());
+    history.setTransferToNewFar(far.getTransferToNewFar());
+    history.setAssetStatus(far.getAssetStatus());
+    history.setValue(far.getValue());
+    history.setPartNumber(far.getPartNumber());
+    history.setVendorName(far.getVendorName());
+    history.setVendorNumber(far.getVendorNumber());
+    history.setMergedCode(far.getMergedCode());
+    history.setCreatedDate(far.getCreatedDate());
+    history.setUpdatedDate(far.getUpdatedDate());
+    history.setCostAccount(far.getCostAccount());
+    history.setAccumulatedDepreAccount(far.getAccumulatedDepreAccount());
+    history.setCipCostAccount(far.getCipCostAccount());
+    history.setExpenseCostCenter(far.getExpenseCostCenter());
+    history.setExpenseAccount(far.getExpenseAccount());
+    history.setLife(far.getLife());
+    history.setDatePlacedInService(far.getDatePlacedInService());
+    history.setCost(far.getCost());
+    history.setNbv(far.getNbv());
+    history.setDepreciationAmount(far.getDepreciationAmount());
+    history.setYtdDepreciation(far.getYtdDepreciation());
+    history.setDepreciationReserve(far.getDepreciationReserve());
+    history.setSalvageValue(far.getSalvageValue());
+    history.setCategory(far.getCategory());
+    history.setCategoryDescription(far.getCategoryDescription());
+    history.setLocationSegment1(far.getLocationSegment1());
+    history.setLocationSegment2(far.getLocationSegment2());
+    history.setLocationSegment3(far.getLocationSegment3());
+    history.setLocationSegment4(far.getLocationSegment4());
+    history.setLocations(far.getLocations());
+    history.setSequenceNumber(far.getSequenceNumber());
+    history.setMonthlyDepreciationAmt(far.getMonthlyDepreciationAmt());
+    history.setAccumulatedDepreciationAmt(far.getAccumulatedDepreciationAmt());
+    history.setDepreciationDate(far.getDepreciationDate());
+    history.setNetCost(far.getNetCost());
+    history.setStatusFlag(far.getStatusFlag());
+    history.setChangedBy(far.getChangedBy());
+    history.setInsertedBy(far.getInsertedBy());
+    history.setFinancialApproval(far.getFinancialApproval());
+    history.setChangedDate(far.getChangedDate());
+    history.setNodeType(far.getNodeType());
+    history.setCreatedBy(far.getCreatedBy());
+    history.setUpdatedBy(far.getUpdatedBy());
+    history.setMapped(far.getMapped());
+    history.setRecordDatetime(new Date()); // timestamp for history
+    return history;
+}
+
+
 }

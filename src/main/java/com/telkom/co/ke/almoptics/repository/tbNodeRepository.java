@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
  * @author jgithu
  */
 @Repository
-public interface tbNodeRepository extends JpaRepository<tbNode, Long> {
+public interface tbNodeRepository extends JpaRepository<tbNode, Integer> {
 
     tbNode findBySerialNumber(String serialNumber);
 

@@ -9,16 +9,19 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import java.util.List;
 
 /**
  *
  * @author jgithu
  */
 @Repository
-public interface PassiveInventoryRepository extends JpaRepository<tbPassiveInventory, Long> {
+public interface PassiveInventoryRepository extends JpaRepository<tbPassiveInventory, Integer> {
 
     tbPassiveInventory findBySerialNumber(String serialNumber);
 
     @Override
     Page<tbPassiveInventory> findAll(Pageable pageable);
+
+     List<tbPassiveInventory> findByInventoryType(int inventoryType, Pageable pageable);
 }

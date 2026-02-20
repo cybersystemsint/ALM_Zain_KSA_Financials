@@ -577,7 +577,7 @@ public class AlmAssetManagementController {
         this.LOGGER.info("Asset ID  " + status);
 
         int page = Math.max(assetRequest.containsKey("page") ? assetRequest.getAsNumber("page").intValue() : 1, 1);
-        int size = Math.max(assetRequest.containsKey("size") ? assetRequest.getAsNumber("size").intValue() : 500, 1);
+        int size = Math.max(assetRequest.containsKey("size") ? assetRequest.getAsNumber("size").intValue() : 100, 1);
 
         String whereClause = buildWhereClause1(status, columnName, searchQuery, dateFrom, dateTo);
         List<Object> params = new ArrayList<>();
