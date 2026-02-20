@@ -31,31 +31,99 @@ public class UnmappedInventoryExportController {
     };
 
     // "rowNumber" removed — sequence number is generated in the service layer
-    private static final String[] PASSIVE_COLUMNS = {
-        "inventoryId", "objectId", "elementType", "parentName",
-        "siteId", "itemBarCode", "serialNumber", "model", "note", "part", "uom",
-        "entryUser", "entryDate", "itemStatus", "categoryInNEP", "scrapStatus", "inventoryType",
-        "locationSubType", "locationClassification", "itemClassification",
-        "itemClassification2", "notes", "prPoNo"
+private static final String[] PASSIVE_COLUMNS = {
+        "recordDateTime",
+        "inventoryId",
+        "objectId",
+        "parentName",
+        "siteId",
+        "itemBarCode",
+        "serialNumber",
+        "model",
+        "note",
+        "part",
+        "entryUser",
+        "entryDate",
+        "itemStatus",
+        "categoryInNEP",
+        "scrapStatus",
+        "inventoryType",
+        "inventoryTypeId",
+        "locationSubType",
+        "locationClassification",
+        "itemClassification",
+        "itemClassification2",
+        "notes",
+        "prPoNo"
     };
+
     private static final String[] PASSIVE_HEADERS = {
-        "Sequence Number", "Inventory ID", "Object ID", "Element Type", "Parent Name",
-        "Site ID", "Item Bar Code", "Serial Number", "Model", "Note", "Part", "UOM",
-        "Entry User", "Entry Date", "Item Status", "Category (NEP)", "Scrap Status", "Inventory Type",
-        "Location Sub Type", "Location Classification", "Item Classification",
-        "Item Classification 2", "Notes", "PR/PO No"
+        "Sequence No",           // generated in Java (prepended by service)
+        "Record Date Time",
+        "Inventory ID",
+        "Object ID",
+        "Parent Name",
+        "Site ID",
+        "Item Bar Code",
+        "Serial Number",
+        "Model",
+        "Note",
+        "Part",
+        "Entry User",
+        "Entry Date",
+        "Item Status",
+        "Category (NEP)",
+        "Scrap Status",
+        "Inventory Type",
+        "Inventory Type ID",
+        "Location Sub Type",
+        "Location Classification",
+        "Item Classification",
+        "Item Classification 2",
+        "Notes",
+        "PR/PO No"
     };
 
     // "rowNumber" removed — sequence number is generated in the service layer
-    private static final String[] IT_COLUMNS = {
-        "objectId", "siteId", "hostSerialNumber", "inventoryTypeId", "inventoryType",
-        "hostTypeName", "firstScan", "ipAddress", "osId", "osName", "hardwareVendorId",
-        "hardwareVendorName", "model", "virtual", "hostTypeId", "category"
+ private static final String[] IT_COLUMNS = {
+        "recordDatetime",
+        "objectId",
+        "siteId",
+        "hostSerialNumber",
+        "inventoryTypeId",
+        "inventoryType",
+        "hostTypeName",
+        "firstScan",
+        "ipAddress",
+        "osId",
+        "osName",
+        "hardwareVendorId",
+        "hardwareVendorName",
+        "model",
+        "isVirtual",         
+        "hostTypeId",
+        "category"
     };
+
     private static final String[] IT_HEADERS = {
-        "Sequence Number", "Object ID", "Site ID", "Host Serial Number", "Inventory Type ID", "Inventory Type",
-        "Host Type Name", "First Scan", "IP Address", "OS ID", "OS Name", "Hardware Vendor ID",
-        "Hardware Vendor Name", "Model", "Virtual", "Host Type ID", "Category"
+        "Sequence No",       // generated in Java (prepended by service)
+        "Record Datetime",
+        "Object ID",
+        "Site ID",
+        "Host Serial Number",
+        "Inventory Type ID",
+        "Inventory Type",
+        "Host Type Name",
+        "First Scan",
+        "IP Address",
+        "OS ID",
+        "OS Name",
+        "Hardware Vendor ID",
+        "Hardware Vendor Name",
+        "Model",
+        "Is Virtual",
+        "Host Type ID",
+        "Category"
     };
 
     @PostMapping(value = "/active-inventories/unmapped/export", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

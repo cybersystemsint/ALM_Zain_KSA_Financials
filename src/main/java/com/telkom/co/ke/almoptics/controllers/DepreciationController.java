@@ -89,20 +89,11 @@ public class DepreciationController {
         "locationSegment3",
         "locationSegment4",
         "locations",
-        "sequenceNumber",
         "monthlyDepreciationAmt",
         "accumulatedDepreciationAmt",
         "depreciationDate",
         "netCost",
-        "statusFlag",
-        "changedBy",
-        "insertedBy",
-        "financialApproval",
-        "changedDate",
-        "nodeType",
-        "createdBy",
-        "updatedBy",
-        "mapped"
+
     };
 
     private static final String[] DEPRECIATION_HEADERS = {
@@ -157,20 +148,11 @@ public class DepreciationController {
         "Location Segment 3",
         "Location Segment 4",
         "Locations",
-        "Sequence Number",
         "Monthly Depreciation Amt",
         "Accumulated Depreciation Amt",
         "Depreciation Date",
         "Net Cost",
-        "Status Flag",
-        "Changed By",
-        "Inserted By",
-        "Financial Approval",
-        "Changed Date",
-        "Node Type",
-        "Created By",
-        "Updated By",
-        "Mapped"
+
     };
 
     // -------------------------------------------------------------------------
