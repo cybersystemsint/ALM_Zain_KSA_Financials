@@ -214,7 +214,7 @@ public class FarReportExportService {
                     return; // Stop processing more rows
                 }
 
-                // SAFE (reads by column name, not index)
+                // Extract row data
                 List<Object> row = new ArrayList<>(EXPECTED_FIELDS.length);
 
                 for (String fieldName : EXPECTED_FIELDS) {
