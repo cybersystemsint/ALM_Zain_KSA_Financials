@@ -18,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -34,130 +35,6 @@ public class DepreciationController {
     private DepreciationHistoryService depreciationHistoryService;
     @Autowired
     private UnmappedInventoryExportService exportService;
-
-    // -------------------------------------------------------------------------
-    // All columns mapped 1-to-1 with DepreciationHistory entity fields.
-    // -------------------------------------------------------------------------
-    private static final String[] DEPRECIATION_COLUMNS = {
-        "recordNo",
-        "recordDatetime",
-        "book",
-        "assetId",
-        "quantity",
-        "description",
-        "creationDate",
-        "serialNumber",
-        "assetType",
-        "tagNumber",
-        "picStatus",
-        "picDate",
-        "cipDeliveryDate",
-        "linkId",
-        "acceptanceNumber",
-        "depreciateFlag",
-        "cipEu",
-        "invoiceNumber",
-        "poNumber",
-        "poLineNumber",
-        "uplLine",
-        "transferToNewFar",
-        "assetStatus",
-        "value",
-        "partNumber",
-        "vendorName",
-        "vendorNumber",
-        "mergedCode",
-        "createdDate",
-        "updatedDate",
-        "costAccount",
-        "accumulatedDepreAccount",
-        "cipCostAccount",
-        "expenseCostCenter",
-        "expenseAccount",
-        "life",
-        "datePlacedInService",
-        "cost",
-        "nbv",
-        "depreciationAmount",
-        "ytdDepreciation",
-        "depreciationReserve",
-        "salvageValue",
-        "category",
-        "categoryDescription",
-        "locationSegment1",
-        "locationSegment2",
-        "locationSegment3",
-        "locationSegment4",
-        "locations",
-        "monthlyDepreciationAmt",
-        "accumulatedDepreciationAmt",
-        "depreciationDate",
-        "netCost",
-
-    };
-
-    private static final String[] DEPRECIATION_HEADERS = {
-        "Sequence No",          // generated in Java by service layer (prepended)
-        "Record No",
-        "Record Datetime",
-        "Book",
-        "Asset ID",
-        "Quantity",
-        "Description",
-        "Creation Date",
-        "Serial Number",
-        "Asset Type",
-        "Tag Number",
-        "PIC Status",
-        "PIC Date",
-        "CIP Delivery Date",
-        "Link ID",
-        "Acceptance Number",
-        "Depreciate Flag",
-        "CIP EU",
-        "Invoice Number",
-        "PO Number",
-        "PO Line Number",
-        "UPL Line",
-        "Transfer To New FAR",
-        "Asset Status",
-        "Value",
-        "Part Number",
-        "Vendor Name",
-        "Vendor Number",
-        "Merged Code",
-        "Created Date",
-        "Updated Date",
-        "Cost Account",
-        "Accumulated Depre Account",
-        "CIP Cost Account",
-        "Expense Cost Center",
-        "Expense Account",
-        "Life",
-        "Date Placed In Service",
-        "Cost",
-        "Net Book Value",
-        "Depreciation Amount",
-        "YTD Depreciation",
-        "Depreciation Reserve",
-        "Salvage Value",
-        "Category",
-        "Category Description",
-        "Location Segment 1",
-        "Location Segment 2",
-        "Location Segment 3",
-        "Location Segment 4",
-        "Locations",
-        "Monthly Depreciation Amt",
-        "Accumulated Depreciation Amt",
-        "Depreciation Date",
-        "Net Cost",
-
-    };
-
-    // -------------------------------------------------------------------------
-    // Endpoints
-    // -------------------------------------------------------------------------
 
     @PostMapping("/depreciation/run")
     public ResponseEntity<String> runDepreciationManually() {
@@ -186,29 +63,31 @@ public class DepreciationController {
             throw e;
         }
     }
+private static final String[] DEPRECIATION_COLUMNS = {
+    "recordNo","recordDatetime","assetId","description","book","quantity",
+    "serialNumber","assetType","depreciationDate","cost","nbv","depreciationAmount",
+    "ytdDepreciation","depreciationReserve","salvageValue","category",
+    "locationSegment1","locationSegment2","locationSegment3","locationSegment4","locations",
+    "sequenceNumber","monthlyDepreciationAmt","accumulatedDepreciationAmt","netCost",
+    "statusFlag","changedBy","createdBy","updatedBy"
+};
+private static final String[] DEPRECIATION_HEADERS = {
+    "Record No","Record Datetime","Asset ID","Description","Book","Quantity",
+    "Serial Number","Asset Type","Depreciation Date","Cost","Net Book Value","Depreciation Amount",
+    "YTD Depreciation","Depreciation Reserve","Salvage Value","Category",
+    "Location Segment 1","Location Segment 2","Location Segment 3","Location Segment 4","Locations",
+    "Sequence Number","Monthly Depreciation","Accumulated Depreciation","Net Cost",
+    "Status","Changed By","Created By","Updated By"
+};
 
     @PostMapping(value = "/depreciation/history/export", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    public StreamingResponseBody exportDepreciationHistory(
-            @RequestBody InventoryRequest req,
-            HttpServletResponse response) {
-        logger.info("POST /depreciation/history/export started, request={}", req);
-        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        response.setHeader("Content-Disposition", "attachment; filename=DepreciationHistory_" + System.currentTimeMillis() + ".xlsx");
-        response.setHeader("Cache-Control", "no-cache");
-        return outputStream -> {
-            try {
-                exportService.exportToExcel(
-                    outputStream,
-                    "tb_DepreciationHistory",
-                    DEPRECIATION_COLUMNS,
-                    DEPRECIATION_HEADERS,
-                    req
-                );
-            } catch (Exception e) {
-                logger.error("Export failed for depreciation history", e);
-                response.setContentType("text/plain");
-                outputStream.write(("Export failed: " + e.getMessage()).getBytes());
-            }
-        };
-    }
+public StreamingResponseBody exportDepreciationHistory(
+        @RequestBody InventoryRequest req,
+        HttpServletResponse response) {
+    logger.info("POST /exporting/depreciation-history started, request={}", req);
+    response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    response.setHeader("Content-Disposition", "attachment; filename=DepreciationHistory_" + System.currentTimeMillis() + ".xlsx");
+    response.setHeader("Cache-Control", "no-cache");
+    return outputStream -> exportService.exportToExcel(outputStream, "tb_DepreciationHistory", DEPRECIATION_COLUMNS, DEPRECIATION_HEADERS, req);
+}
 }
