@@ -24,7 +24,7 @@ public class UnmappedInventoryExportService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    private static final int BATCH_SIZE = 1000;
+    private static final int BATCH_SIZE = 10_000;
     private static final int MAX_ROWS_PER_SHEET = 1_000_000;
     private static final int LOG_INTERVAL = 50000;
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("dd-MM-yyyy HH:mm:ss");
