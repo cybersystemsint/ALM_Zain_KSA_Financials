@@ -1,5 +1,6 @@
 package com.telkom.co.ke.almoptics.serviceImplementor;
 
+import com.telkom.co.ke.almoptics.dto.FarReportExportRequest;
 import com.telkom.co.ke.almoptics.entities.tb_FarReport;
 import com.telkom.co.ke.almoptics.repository.FarReportRepository;
 import net.minidev.json.JSONObject;
@@ -93,7 +94,7 @@ public class FarReportService {
             "insertedBy = ?, financialApproval = ?, changedDate = ?, nodeType = ?, mapped = ? " +
             "WHERE assetId = ?";
 
-    private static final String[] EXPECTED_FIELDS = {
+    public static final String[] EXPECTED_FIELDS = {
             "recordDatetime", "book", "assetId", "quantity", "description", "assetType", "creationDate",
             "serialNumber", "tagNumber", "picStatus", "picDate", "cipDeliveryDate", "linkId", "acceptanceNumber",
             "depreciateFlag", "cipEu", "invoiceNumber", "poNumber", "poLineNumber", "uplLine", "transferToNewFar",
@@ -586,5 +587,426 @@ public class FarReportService {
                     throw new IllegalArgumentException("Unsupported operator: " + operator);
             }
         };
+    }
+    // Added this to FarReportService.java for multifilter
+    /**
+     * Filter FAR Reports with advanced multi-criteria support and summary calculations
+     * Response format matches /fetch-finance-report for consistency
+     */
+    public Map<String, Object> filterFarReportsAdvanced(
+            FarReportExportRequest request,
+            int page,
+            int size,
+            String sortBy,
+            String sortDir) {
+
+        // Build SQL with filters
+        String whereClause = buildAdvancedWhereClauseForFilter(request);
+        List<Object> params = new ArrayList<>();
+
+        // Add parameters for WHERE clause
+        addFilterParameters(request, params);
+
+        // ========================================================================
+        // 1. CALCULATE GLOBAL TOTALS (before filters)
+        // ========================================================================
+        Map<String, Object> globalTotals = calculateGlobalTotals();
+
+        // ========================================================================
+        // 2. COUNT TOTAL FILTERED RECORDS
+        // ========================================================================
+        String countSql = "SELECT COUNT(*) FROM `tb_FarReport`" +
+                (whereClause.isEmpty() ? "" : " WHERE " + whereClause);
+        int totalRecords = jdbcTemplate.queryForObject(countSql, params.toArray(), Integer.class);
+
+        // ========================================================================
+        // 3. CALCULATE FILTERED TOTALS (after filters)
+        // ========================================================================
+        Map<String, Object> filteredTotals = calculateFilteredTotals(whereClause, params);
+
+        // ========================================================================
+        // 4. EXTRACT DATE RANGE FROM FILTERS (FIXED - was missing this call!)
+        // ========================================================================
+        Map<String, String> dateRange = extractDateRangeFromFilters(request);
+
+        // ========================================================================
+        // 5. FETCH PAGINATED DATA
+        // ========================================================================
+        String orderBy = String.format(" ORDER BY %s %s", sortBy, sortDir.toUpperCase());
+        int offset = page * size;
+        String paginationSql = " LIMIT ? OFFSET ?";
+
+        List<Object> queryParams = new ArrayList<>(params);
+        queryParams.add(size);
+        queryParams.add(offset);
+
+        String sql = "SELECT * FROM `tb_FarReport`" +
+                (whereClause.isEmpty() ? "" : " WHERE " + whereClause) +
+                orderBy + paginationSql;
+
+        LOGGER.info("Filter SQL: {}", sql);
+        LOGGER.info("Filter Params: {}", queryParams);
+
+        List<Map<String, Object>> result = jdbcTemplate.queryForList(sql, queryParams.toArray());
+
+        // ========================================================================
+        // 6. PREPARE RESPONSE - USE LINKEDHASHMAP FOR ORDERED FIELDS
+        // ========================================================================
+        Map<String, Object> response = new LinkedHashMap<>();
+
+        // ADD DATE RANGE FIRST
+        response.put("fromDate", dateRange.get("fromDate"));
+        response.put("toDate", dateRange.get("toDate"));
+
+        // ADD SUMMARY FIELDS
+        response.put("totalRecords", totalRecords);
+        response.put("totalDepreciation", globalTotals.get("totalAccumulatedDepreciation"));
+        response.put("filteredDepreciation", filteredTotals.get("filteredAccumulatedDepreciation"));
+        response.put("totalPages", (int) Math.ceil((double) totalRecords / size));
+        response.put("pageSize", size);
+        response.put("totalNBV", globalTotals.get("totalNBV"));
+        response.put("filteredNBV", filteredTotals.get("filteredNBV"));
+        response.put("currentPage", page);
+        response.put("totalCost", globalTotals.get("totalCost"));
+        response.put("filteredCost", filteredTotals.get("filteredCost"));
+
+        // ADD DATA LAST
+        response.put("data", result);
+
+        LOGGER.info("Filter completed. {} records returned, {} total filtered records",
+                result.size(), totalRecords);
+        LOGGER.info("Date range: {} to {}", dateRange.get("fromDate"), dateRange.get("toDate"));
+
+        return response;
+    }
+    /**
+     * Extract date range from filters for summary display
+     * Checks common date fields and operators to find date range
+     */
+    private Map<String, String> extractDateRangeFromFilters(FarReportExportRequest request) {
+        Map<String, String> dateRange = new HashMap<>();
+        dateRange.put("fromDate", "");
+        dateRange.put("toDate", "");
+
+        if (request.getFilterBy() == null || request.getFilterBy().isEmpty()) {
+            return dateRange;
+        }
+
+        // Check for common date fields with range operators
+        String[] dateFields = {
+                "recordDatetime", "creationDate", "picDate", "cipDeliveryDate",
+                "createdDate", "updatedDate", "datePlacedInService",
+                "depreciationDate", "changedDate"
+        };
+
+        // Track if we found any date filters
+        boolean foundDateFilter = false;
+
+        for (String dateField : dateFields) {
+            FarReportExportRequest.FilterCriteria criteria = request.getFilterBy().get(dateField);
+
+            if (criteria != null && criteria.getValue() != null && !criteria.getValue().isEmpty()) {
+                String operator = criteria.getOperator() != null ? criteria.getOperator().toLowerCase() : "";
+                String value = criteria.getValue();
+
+                if ("between".equals(operator)) {
+                    // Format: "2024-01-01,2024-12-31"
+                    String[] dates = value.split(",");
+                    if (dates.length == 2) {
+                        dateRange.put("fromDate", dates[0].trim());
+                        dateRange.put("toDate", dates[1].trim());
+                        foundDateFilter = true;
+                        break;
+                    }
+                } else if ("gte".equals(operator) || "greaterthanorequal".equals(operator)) {
+                    dateRange.put("fromDate", value.trim());
+                    foundDateFilter = true;
+                } else if ("lte".equals(operator) || "lessthanorequal".equals(operator)) {
+                    dateRange.put("toDate", value.trim());
+                    foundDateFilter = true;
+                } else if ("gt".equals(operator) || "greaterthan".equals(operator)) {
+                    dateRange.put("fromDate", value.trim());
+                    foundDateFilter = true;
+                } else if ("lt".equals(operator) || "lessthan".equals(operator)) {
+                    dateRange.put("toDate", value.trim());
+                    foundDateFilter = true;
+                } else if ("equals".equals(operator)) {
+                    // If exact date match, set both from and to
+                    dateRange.put("fromDate", value.trim());
+                    dateRange.put("toDate", value.trim());
+                    foundDateFilter = true;
+                }
+
+                // If we found a date filter, log it and break
+                if (foundDateFilter) {
+                    LOGGER.info("Extracted date range from field '{}': {} to {}",
+                            dateField, dateRange.get("fromDate"), dateRange.get("toDate"));
+                    break;
+                }
+            }
+        }
+
+        return dateRange;
+    }
+    /**
+     * Calculate global totals (all records, no filters)
+     */
+    private Map<String, Object> calculateGlobalTotals() {
+        String sql = "SELECT " +
+                "COALESCE(SUM(netCost), 0) as totalNBV, " +
+                "COALESCE(SUM(cost), 0) as totalCost, " +
+                "COALESCE(SUM(accumulatedDepreciationAmt), 0) as totalAccumulatedDepreciation " +
+                "FROM `tb_FarReport`";
+
+        Map<String, Object> totals = jdbcTemplate.queryForMap(sql);
+
+        LOGGER.info("Global Totals - NBV: {}, Cost: {}, Acc.Dep: {}",
+                totals.get("totalNBV"), totals.get("totalCost"),
+                totals.get("totalAccumulatedDepreciation"));
+
+        return totals;
+    }
+
+    /**
+     * Calculate filtered totals (with filters applied)
+     */
+    private Map<String, Object> calculateFilteredTotals(String whereClause, List<Object> params) {
+        String sql = "SELECT " +
+                "COALESCE(SUM(netCost), 0) as filteredNBV, " +
+                "COALESCE(SUM(cost), 0) as filteredCost, " +
+                "COALESCE(SUM(accumulatedDepreciationAmt), 0) as filteredAccumulatedDepreciation " +
+                "FROM `tb_FarReport`" +
+                (whereClause.isEmpty() ? "" : " WHERE " + whereClause);
+
+        Map<String, Object> totals = jdbcTemplate.queryForMap(sql, params.toArray());
+
+        LOGGER.info("Filtered Totals - NBV: {}, Cost: {}, Acc.Dep: {}",
+                totals.get("filteredNBV"), totals.get("filteredCost"),
+                totals.get("filteredAccumulatedDepreciation"));
+
+        return totals;
+    }
+    /**
+     * Build WHERE clause from filter request (similar to export but for filter endpoint)
+     */
+    private String buildAdvancedWhereClauseForFilter(FarReportExportRequest request) {
+        List<String> conditions = new ArrayList<>();
+
+        // Handle filterBy map (multiple filters with operators)
+        if (request.getFilterBy() != null && !request.getFilterBy().isEmpty()) {
+            for (Map.Entry<String, FarReportExportRequest.FilterCriteria> entry :
+                    request.getFilterBy().entrySet()) {
+
+                String column = entry.getKey();
+                FarReportExportRequest.FilterCriteria criteria = entry.getValue();
+
+                // Validate column name against EXPECTED_FIELDS
+                if (!Arrays.asList(EXPECTED_FIELDS).contains(column)) {
+                    LOGGER.warn("Invalid column in filterBy ignored: {}", column);
+                    continue;
+                }
+
+                String condition = buildFilterCondition(column, criteria.getValue(),
+                        criteria.getOperator());
+                if (condition != null && !condition.isEmpty()) {
+                    conditions.add(condition);
+                }
+            }
+        }
+
+        // Handle legacy columnName and searchQuery
+        if (request.getColumnName() != null && !request.getColumnName().isEmpty() &&
+                request.getSearchQuery() != null && !request.getSearchQuery().isEmpty()) {
+
+            if (Arrays.asList(EXPECTED_FIELDS).contains(request.getColumnName())) {
+                String condition = buildFilterCondition(request.getColumnName(),
+                        request.getSearchQuery(),
+                        "contains");
+                if (condition != null && !condition.isEmpty()) {
+                    conditions.add(condition);
+                }
+            }
+        }
+
+        return conditions.isEmpty() ? "" : String.join(" AND ", conditions);
+    }
+
+    /**
+     * Build single filter condition (returns SQL fragment without parameters)
+     */
+    private String buildFilterCondition(String column, String value, String operator) {
+        if (value == null || value.trim().isEmpty()) {
+            return "";
+        }
+
+        String op = operator == null ? "equals" : operator.toLowerCase();
+
+        switch (op) {
+            case "equals":
+                return column + " = ?";
+
+            case "like":
+            case "contains":
+                return column + " LIKE ?";
+
+            case "startswith":
+            case "startsWith":
+                return column + " LIKE ?";
+
+            case "endswith":
+            case "endsWith":
+                return column + " LIKE ?";
+
+            case "greaterthan":
+            case "greaterThan":
+            case "gt":
+                return column + " > ?";
+
+            case "lessthan":
+            case "lessThan":
+            case "lt":
+                return column + " < ?";
+
+            case "greaterthanorequal":
+            case "greaterThanOrEqual":
+            case "gte":
+                return column + " >= ?";
+
+            case "lessthanorequal":
+            case "lessThanOrEqual":
+            case "lte":
+                return column + " <= ?";
+
+            case "notequals":
+            case "notEquals":
+            case "ne":
+                return column + " != ?";
+
+            case "in":
+                String[] values = value.split(",");
+                String placeholders = String.join(",", Collections.nCopies(values.length, "?"));
+                return column + " IN (" + placeholders + ")";
+
+            case "notin":
+            case "notIn":
+                String[] notInValues = value.split(",");
+                String notInPlaceholders = String.join(",", Collections.nCopies(notInValues.length, "?"));
+                return column + " NOT IN (" + notInPlaceholders + ")";
+
+            case "isnull":
+            case "isNull":
+                return column + " IS NULL";
+
+            case "isnotnull":
+            case "isNotNull":
+                return column + " IS NOT NULL";
+
+            case "between":
+                return column + " BETWEEN ? AND ?";
+
+            default:
+                LOGGER.warn("Unsupported operator: {}", operator);
+                return "";
+        }
+    }
+
+    /**
+     * Add filter parameters to params list (must match order of buildFilterCondition)
+     */
+    private void addFilterParameters(FarReportExportRequest request, List<Object> params) {
+        // Handle filterBy map
+        if (request.getFilterBy() != null && !request.getFilterBy().isEmpty()) {
+            for (Map.Entry<String, FarReportExportRequest.FilterCriteria> entry :
+                    request.getFilterBy().entrySet()) {
+
+                String column = entry.getKey();
+                FarReportExportRequest.FilterCriteria criteria = entry.getValue();
+
+                // Skip invalid columns
+                if (!Arrays.asList(EXPECTED_FIELDS).contains(column)) {
+                    continue;
+                }
+
+                String value = criteria.getValue();
+                if (value == null || value.trim().isEmpty()) {
+                    continue;
+                }
+
+                String op = criteria.getOperator() == null ? "equals" : criteria.getOperator().toLowerCase();
+
+                switch (op) {
+                    case "equals":
+                    case "notequals":
+                    case "notEquals":
+                    case "ne":
+                    case "greaterthan":
+                    case "greaterThan":
+                    case "gt":
+                    case "lessthan":
+                    case "lessThan":
+                    case "lt":
+                    case "greaterthanorequal":
+                    case "greaterThanOrEqual":
+                    case "gte":
+                    case "lessthanorequal":
+                    case "lessThanOrEqual":
+                    case "lte":
+                        params.add(value);
+                        break;
+
+                    case "like":
+                    case "contains":
+                        params.add("%" + value + "%");
+                        break;
+
+                    case "startswith":
+                    case "startsWith":
+                        params.add(value + "%");
+                        break;
+
+                    case "endswith":
+                    case "endsWith":
+                        params.add("%" + value);
+                        break;
+
+                    case "in":
+                    case "notin":
+                    case "notIn":
+                        String[] values = value.split(",");
+                        for (String v : values) {
+                            params.add(v.trim());
+                        }
+                        break;
+
+                    case "between":
+                        String[] betweenValues = value.split(",");
+                        if (betweenValues.length == 2) {
+                            params.add(betweenValues[0].trim());
+                            params.add(betweenValues[1].trim());
+                        }
+                        break;
+
+                    case "isnull":
+                    case "isNull":
+                    case "isnotnull":
+                    case "isNotNull":
+                        // No parameters needed
+                        break;
+
+                    default:
+                        LOGGER.warn("Unsupported operator: {}", op);
+                        break;
+                }
+            }
+        }
+
+        // Handle legacy columnName and searchQuery
+        if (request.getColumnName() != null && !request.getColumnName().isEmpty() &&
+                request.getSearchQuery() != null && !request.getSearchQuery().isEmpty()) {
+
+            if (Arrays.asList(EXPECTED_FIELDS).contains(request.getColumnName())) {
+                params.add("%" + request.getSearchQuery() + "%");
+            }
+        }
     }
 }
