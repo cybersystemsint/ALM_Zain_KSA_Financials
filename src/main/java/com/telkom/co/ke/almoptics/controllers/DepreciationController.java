@@ -94,15 +94,7 @@ public class DepreciationController {
         "accumulatedDepreciationAmt",
         "depreciationDate",
         "netCost",
-        "statusFlag",
-        "changedBy",
-        "insertedBy",
-        "financialApproval",
-        "changedDate",
-        "nodeType",
-        "createdBy",
-        "updatedBy",
-        "mapped"
+
     };
 
     private static final String[] DEPRECIATION_HEADERS = {
@@ -162,15 +154,7 @@ public class DepreciationController {
         "Accumulated Depreciation Amt",
         "Depreciation Date",
         "Net Cost",
-        "Status Flag",
-        "Changed By",
-        "Inserted By",
-        "Financial Approval",
-        "Changed Date",
-        "Node Type",
-        "Created By",
-        "Updated By",
-        "Mapped"
+
     };
 
     // -------------------------------------------------------------------------
