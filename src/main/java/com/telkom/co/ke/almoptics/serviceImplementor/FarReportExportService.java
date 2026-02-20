@@ -29,20 +29,25 @@ public class FarReportExportService {
     // ============================================================================
     // CONSTANTS
     // ============================================================================
+    // ============================================================================
+    // OPTIMIZED EXPORT COLUMNS (39 columns for maximum performance)
+    // Removed from original 63 columns:
+    //   - Audit fields: recordNo, recordDatetime, createdDate, createdBy, updatedBy,
+    //     changedBy, insertedBy, financialApproval, changedDate, sequenceNumber
+    //   - Depreciation details: monthlyDepreciationAmt, accumulatedDepreciationAmt,
+    //     depreciationDate, depreciationAmount, salvageValue, life
+    //   - Vendor info: vendorName, vendorNumber
+    //   - Other: nodeType, statusFlag, netCost, mapped, value
+    // ============================================================================
     public static final String[] EXPECTED_FIELDS = {
-            "recordNo", "recordDatetime", "serialNumber", "tagNumber", "assetId", "assetType", "description", "nodeType", "datePlacedInService", "cost",
-            "salvageValue", "poNumber", "createdDate", "category",
-            "locationSegment1", "locationSegment2", "locationSegment3", "locationSegment4", "accumulatedDepreAccount", "costAccount", "life",
-            "vendorName", "vendorNumber", "locations", "value", "invoiceNumber", "linkId", "poLineNumber", "monthlyDepreciationAmt",
-            "accumulatedDepreciationAmt", "statusFlag",
-            "depreciationDate", "netCost",  "book", "quantity", "assetStatus", "partNumber", "nbv", "depreciationAmount", "ytdDepreciation",
-            "depreciationReserve", "categoryDescription",
-            "creationDate", "picStatus", "picDate", "cipDeliveryDate", "acceptanceNumber",
-            "depreciateFlag", "cipEu", "uplLine", "transferToNewFar", "mergedCode", "cipCostAccount", "expenseCostCenter", "expenseAccount",
-            "sequenceNumber", "createdBy", "updatedBy",
-            "changedBy", "insertedBy", "financialApproval", "changedDate", "mapped"
+            "book", "assetId", "quantity", "description", "serialNumber", "tagNumber", "picStatus", "picDate",
+            "cipDeliveryDate", "linkId", "acceptanceNumber", "depreciateFlag", "cipEu", "invoiceNumber",
+            "poNumber", "poLineNumber", "uplLine", "transferToNewFar", "assetStatus", "partNumber",
+            "mergedCode", "costAccount", "accumulatedDepreAccount", "cipCostAccount", "expenseCostCenter",
+            "expenseAccount", "datePlacedInService", "cost", "ytdDepreciation", "depreciationReserve",
+            "nbv", "category", "assetType", "categoryDescription", "locationSegment1", "locationSegment2",
+            "locationSegment3", "locationSegment4", "locations"
     };
-
     private static final int LOG_INTERVAL = 100_000;
     private static final int BATCH_SIZE = 5_000;
     private static final int MAX_ROWS_PER_SHEET = 1_000_000;
