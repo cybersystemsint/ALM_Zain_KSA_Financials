@@ -13,7 +13,7 @@ import javax.persistence.Table;
 
 @Entity
 
-@Table(name = "`FarReport`", indexes = { @Index(name = "PRIMARY", columnList = "recordNo", unique = false) })
+@Table(name = "tb_FarReport", indexes = { @Index(name = "PRIMARY", columnList = "recordNo", unique = false) })
 public class FarReport implements Serializable {
 
 	private static final long serialVersionUID = 1L;
@@ -44,7 +44,7 @@ public class FarReport implements Serializable {
 	@Column(name = "serialNumber")
 	private String serialNumber;
 
-	@Column(name = "asset_type")
+	@Column(name = "assetType")
 	private String assetType;
 
 	@Column(name = "tagNumber")

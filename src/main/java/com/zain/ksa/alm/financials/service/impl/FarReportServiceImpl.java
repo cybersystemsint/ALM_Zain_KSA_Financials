@@ -86,7 +86,7 @@ public class FarReportServiceImpl implements FarReportService {
 	public void streamExportToCsv(PrintWriter writer, String column, String value, String operator) throws IOException {
 		StringBuilder sql = new StringBuilder("SELECT ");
 		sql.append(String.join(", ", COLUMNS));
-		sql.append(" FROM FarReport WHERE 1=1");
+		sql.append(" FROM tb_FarReport WHERE 1=1");
 
 		List<Object> params = new ArrayList<>();
 

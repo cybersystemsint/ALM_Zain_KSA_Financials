@@ -110,9 +110,9 @@ public class AssetTrackingServiceImpl implements AssetTrackingService {
 
 	@Override
 	public Map<String, Object> getAssetTracking(JSONObject assetRequest) {
-		String serialNumber = assetRequest.getAsString("serialNumber");
-		String siteId = assetRequest.getAsString("siteId");
-		String username = assetRequest.getAsString("username");
+		String serialNumber = assetRequest.containsKey("serialNumber") ? assetRequest.getAsString("serialNumber") : "";
+		String siteId = assetRequest.containsKey("siteId") ? assetRequest.getAsString("siteId") : "";
+		String username = assetRequest.containsKey("username") ? assetRequest.getAsString("username") : "";
 		String columnName = assetRequest.containsKey("columnName") ? assetRequest.getAsString("columnName") : "";
 		String searchQuery = assetRequest.containsKey("searchQuery") ? assetRequest.getAsString("searchQuery") : "";
 

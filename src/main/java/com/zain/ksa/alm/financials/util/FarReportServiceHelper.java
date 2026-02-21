@@ -56,7 +56,7 @@ public class FarReportServiceHelper {
 	}
 
 	public Map<String, Object> fetchFinanceReport(JSONObject request) {
-		String assetId = request.getAsString("assetId");
+		String assetId = request.containsKey("assetId") ? request.getAsString("assetId") : "";
 		String columnName = request.containsKey("columnName") ? request.getAsString("columnName") : "";
 		String searchQuery = request.containsKey("searchQuery") ? request.getAsString("searchQuery") : "";
 		String dateFrom = request.containsKey("dateFrom") ? request.getAsString("dateFrom") : "";
@@ -88,7 +88,7 @@ public class FarReportServiceHelper {
 			params.add(dateTo);
 		}
 
-		String countSql = "SELECT COUNT(*) FROM FarReport" + whereClause;
+		String countSql = "SELECT COUNT(*) FROM tb_FarReport" + whereClause;
 		int totalRecords = jdbcTemplate.queryForObject(countSql, params.toArray(), Integer.class);
 
 		java.math.BigDecimal totalCost = getAggregate("SUM(cost)", "", new ArrayList<>());
@@ -101,7 +101,7 @@ public class FarReportServiceHelper {
 		dataParams.add(size);
 		dataParams.add(offset);
 
-		String dataSql = "SELECT recordNo, recordDatetime, book, assetId, quantity, description, asset_type, creationDate, "
+		String dataSql = "SELECT recordNo, recordDatetime, book, assetId, quantity, description, assetType, creationDate, "
 				+ "serialNumber, tagNumber, picStatus, picDate, cipDeliveryDate, linkId, acceptanceNumber, depreciateFlag, "
 				+ "cipEu, invoiceNumber, poNumber, poLineNumber, uplLine, transferToNewFar, assetStatus, value, partNumber, "
 				+ "vendorName, vendorNumber, mergedCode, costAccount, accumulatedDepreAccount, cipCostAccount, expenseCostCenter, "
@@ -109,7 +109,7 @@ public class FarReportServiceHelper {
 				+ "salvageValue, category, categoryDescription, locationSegment1, locationSegment2, locationSegment3, "
 				+ "locationSegment4, locations, sequenceNumber, createdBy, createdDate, updatedBy, updatedDate, "
 				+ "monthlyDepreciationAmt, accumulatedDepreciationAmt, depreciationDate, netCost, statusFlag, changedBy, "
-				+ "insertedBy, financialApproval, changedDate, nodeType FROM FarReport" + whereClause + paginationSql;
+				+ "insertedBy, financialApproval, changedDate, nodeType FROM tb_FarReport" + whereClause + paginationSql;
 
 		List<Map<String, Object>> data = jdbcTemplate.query(dataSql, (rs, rowNum) -> {
 			Map<String, Object> row = new LinkedHashMap<>();
@@ -156,15 +156,15 @@ public class FarReportServiceHelper {
 	}
 
 	private java.math.BigDecimal getAggregate(String aggregateFunction, String whereClause, List<Object> params) {
-		String sql = "SELECT COALESCE(" + aggregateFunction + ", 0) FROM FarReport" + whereClause;
+		String sql = "SELECT COALESCE(" + aggregateFunction + ", 0) FROM tb_FarReport" + whereClause;
 		return jdbcTemplate.queryForObject(sql, params.toArray(), java.math.BigDecimal.class);
 	}
 
-	private static final String SELECT_SQL = "SELECT * FROM FarReport WHERE assetId = ?";
+	private static final String SELECT_SQL = "SELECT * FROM tb_FarReport WHERE assetId = ?";
 
 	// INSERT SQL - 62 fields (63 total columns minus recordNo which is
 	// auto-increment)
-	private static final String INSERT_SQL = "INSERT INTO FarReport ("
+	private static final String INSERT_SQL = "INSERT INTO tb_FarReport ("
 			+ "recordDatetime, book, assetId, quantity, description, assetType, creationDate, "
 			+ "serialNumber, tagNumber, picStatus, picDate, cipDeliveryDate, linkId, acceptanceNumber, "
 			+ "depreciateFlag, cipEu, invoiceNumber, poNumber, poLineNumber, uplLine, transferToNewFar, "
@@ -182,7 +182,7 @@ public class FarReportServiceHelper {
 			")";
 
 	// UPDATE SQL - 61 fields to update + 1 WHERE clause = 62 parameters
-	private static final String UPDATE_SQL = "UPDATE FarReport SET "
+	private static final String UPDATE_SQL = "UPDATE tb_FarReport SET "
 			+ "recordDatetime = ?, book = ?, quantity = ?, description = ?, assetType = ?, creationDate = ?, "
 			+ "serialNumber = ?, tagNumber = ?, picStatus = ?, picDate = ?, cipDeliveryDate = ?, linkId = ?, "
 			+ "acceptanceNumber = ?, depreciateFlag = ?, cipEu = ?, invoiceNumber = ?, poNumber = ?, "

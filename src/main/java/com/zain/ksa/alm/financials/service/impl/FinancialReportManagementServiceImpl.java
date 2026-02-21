@@ -42,7 +42,7 @@ public class FinancialReportManagementServiceImpl implements FinancialReportMana
 
 	@Override
 	public Map<String, Object> getFARReport(JSONObject assetRequest) {
-		String status = assetRequest.getAsString("assetId");
+		String status = assetRequest.containsKey("assetId") ? assetRequest.getAsString("assetId") : "";
 		String columnName = assetRequest.containsKey("columnName") ? assetRequest.getAsString("columnName") : "";
 		String searchQuery = assetRequest.containsKey("searchQuery") ? assetRequest.getAsString("searchQuery") : "";
 		String dateFrom = assetRequest.containsKey("dateFrom") ? assetRequest.getAsString("dateFrom") : null;
@@ -56,7 +56,7 @@ public class FinancialReportManagementServiceImpl implements FinancialReportMana
 		String whereClause = buildWhereClause(status, columnName, searchQuery, dateFrom, dateTo);
 		List<Object> params = buildParams(status, columnName, searchQuery, dateFrom, dateTo);
 
-		String countSql = "SELECT COUNT(*) FROM FarReport " + whereClause;
+		String countSql = "SELECT COUNT(*) FROM tb_FarReport " + whereClause;
 		int totalRecords = jdbcTemplate.queryForObject(countSql, Integer.class, params.toArray());
 
 		BigDecimal filteredCost = getAggregateValue("SUM(cost)", whereClause, params);
@@ -76,7 +76,7 @@ public class FinancialReportManagementServiceImpl implements FinancialReportMana
 				+ "depreciationAmount, ytdDepreciation, depreciationReserve, salvageValue, category, categoryDescription, "
 				+ "locationSegment1, locationSegment2, locationSegment3, locationSegment4, locations, sequenceNumber, "
 				+ "createdBy, createdDate, updatedBy, updatedDate, monthlyDepreciationAmt, accumulatedDepreciationAmt, "
-				+ "depreciationDate, netCost FROM FarReport " + whereClause + paginationSql;
+				+ "depreciationDate, netCost FROM tb_FarReport " + whereClause + paginationSql;
 
 		List<Map<String, Object>> result = new ArrayList<>();
 		jdbcTemplate.query(sql, rs -> {
@@ -136,7 +136,7 @@ public class FinancialReportManagementServiceImpl implements FinancialReportMana
 	}
 
 	private BigDecimal getAggregateValue(String aggregateFunction, String whereClause, List<Object> params) {
-		String sql = "SELECT " + aggregateFunction + " FROM FarReport " + whereClause;
+		String sql = "SELECT " + aggregateFunction + " FROM tb_FarReport " + whereClause;
 		return jdbcTemplate.queryForObject(sql, BigDecimal.class, params.toArray());
 	}
 
@@ -413,7 +413,7 @@ public class FinancialReportManagementServiceImpl implements FinancialReportMana
 		JSONArray jsonObjectResponse = new JSONArray();
 		try {
 			LOGGER.info("GET ALL ASSETS {}", assetRequest);
-			String status = assetRequest.getAsString("assetId");
+			String status = assetRequest.containsKey("assetId") ? assetRequest.getAsString("assetId") : "";
 
 			List<FinancialReport> allReport = (!status.isEmpty() && !status.equalsIgnoreCase(""))
 					? financialReportService.findByAssetId(status)
