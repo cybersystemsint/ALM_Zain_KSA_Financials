@@ -14,12 +14,13 @@ import org.springframework.stereotype.Repository;
  * @author jgithu
  */
 @Repository
-public interface tb_Asset_DepreciationRepository extends JpaRepository<tb_Asset_Depreciation, Long> {
+public interface tb_Asset_DepreciationRepository extends JpaRepository<tb_Asset_Depreciation, Integer> {
 
     List<tb_Asset_Depreciation> findAll();
 
     tb_Asset_Depreciation findByAssetCode(String paramString);
     
-      tb_Asset_Depreciation findByAssetCodeAndDepreciationDate (String paramString, String depreciationDate);
+       List<tb_Asset_Depreciation> findByAssetCodeAndDepreciationDate(String assetCode, String depreciationDate);
+
 
 }

@@ -9,11 +9,14 @@ import java.sql.Date;
 import java.sql.Timestamp;
 import javax.persistence.*;
 
+import org.hibernate.annotations.DynamicUpdate;
+
 /**
  *
  * @author jgithu
  */
 @Entity
+@DynamicUpdate
 @Table(name = "tb_Node")
 public class tbNode implements Serializable {
 
@@ -43,8 +46,7 @@ public class tbNode implements Serializable {
     private Timestamp updateDate;
     private String changedBy;
     private Timestamp changedDate;
-    
-      
+    @Column(name = "isMapped") 
     private Boolean isMapped;
 
     public Boolean getIsMapped() {

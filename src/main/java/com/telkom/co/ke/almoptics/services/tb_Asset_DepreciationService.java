@@ -20,6 +20,6 @@ public interface tb_Asset_DepreciationService {
   
   tb_Asset_Depreciation findByAssetCode(String paramString);
   
-  tb_Asset_Depreciation findByAssetCodeAndDepreciationDate (String paramString, String depreciationDate);
+  List<tb_Asset_Depreciation> findByAssetCodeAndDepreciationDate(String assetCode, String depreciationDate);
 }
 

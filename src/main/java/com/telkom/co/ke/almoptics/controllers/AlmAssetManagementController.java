@@ -577,7 +577,7 @@ public class AlmAssetManagementController {
         this.LOGGER.info("Asset ID  " + status);
 
         int page = Math.max(assetRequest.containsKey("page") ? assetRequest.getAsNumber("page").intValue() : 1, 1);
-        int size = Math.max(assetRequest.containsKey("size") ? assetRequest.getAsNumber("size").intValue() : 500, 1);
+        int size = Math.max(assetRequest.containsKey("size") ? assetRequest.getAsNumber("size").intValue() : 100, 1);
 
         String whereClause = buildWhereClause1(status, columnName, searchQuery, dateFrom, dateTo);
         List<Object> params = new ArrayList<>();
@@ -659,7 +659,14 @@ public class AlmAssetManagementController {
         if (!columnName.equalsIgnoreCase("") && !searchQuery.equalsIgnoreCase("") && !columnName.equalsIgnoreCase("recordDatetime")) {
             whereClause.append(" AND ").append(columnName.toLowerCase()).append(" LIKE ? ");
         }
+        // Date filtering logic
+        if (dateFrom != null && !dateFrom.isEmpty()) {
+            whereClause.append(" AND datePlacedInService >= ? ");
+        }
 
+        if (dateTo != null && !dateTo.isEmpty()) {
+            whereClause.append(" AND datePlacedInService <= ? ");
+        }
 
         return whereClause.toString();
     }

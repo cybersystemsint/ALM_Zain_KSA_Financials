@@ -34,5 +34,5 @@ public interface FarReportService {
 
     void streamExportToCsv(PrintWriter writer, String column, String value, String operator) throws IOException;
 
-
+     void saveAll(List<tb_FarReport> assets);
 }
