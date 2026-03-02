@@ -11,7 +11,6 @@ import com.zain.ksa.alm.financials.entity.AssetJournal;
 import com.zain.ksa.alm.financials.entity.UnmappedActiveAsset;
 import com.zain.ksa.alm.financials.service.AssetJournalService;
 import com.zain.ksa.alm.financials.service.AssetReportService;
-import com.zain.ksa.alm.financials.service.UnmappedActiveAssetService;
 
 import net.minidev.json.JSONArray;
 import net.minidev.json.JSONObject;
@@ -21,45 +20,14 @@ public class AssetReportServiceImpl implements AssetReportService {
 
 	private static final Logger LOGGER = LogManager.getLogger(AssetReportServiceImpl.class);
 
-	private final UnmappedActiveAssetService unmappedService;
 	private final AssetJournalService assetJournalService;
 
-	public AssetReportServiceImpl(UnmappedActiveAssetService unmappedService, AssetJournalService assetJournalService) {
-		this.unmappedService = unmappedService;
+
+
+
+
+	public AssetReportServiceImpl(AssetJournalService assetJournalService) {
 		this.assetJournalService = assetJournalService;
-	}
-
-	@Override
-	public JSONArray getUnmappedActiveAssets() {
-		JSONArray jsonObjectResponse = new JSONArray();
-		try {
-			LOGGER.info("GET ALL UNMAPPED ASSETS");
-			List<UnmappedActiveAsset> allReport = unmappedService.findAll();
-
-			for (UnmappedActiveAsset financeRPT : allReport) {
-				JSONObject singleAssetObj = new JSONObject();
-				singleAssetObj.put("recordNo", financeRPT.getRecordNo());
-				singleAssetObj.put("recordDatetime", financeRPT.getRecordDateTime());
-				singleAssetObj.put("nodeName", financeRPT.getNodeName());
-				singleAssetObj.put("assetName", financeRPT.getAssetName());
-				singleAssetObj.put("assetType", financeRPT.getAssetType());
-				singleAssetObj.put("nodeType", financeRPT.getNodeType());
-				singleAssetObj.put("siteId", financeRPT.getSiteId());
-				singleAssetObj.put("manufacturer", financeRPT.getManufacturer());
-				singleAssetObj.put("model", financeRPT.getModel());
-				singleAssetObj.put("partNumber", financeRPT.getPartNumber());
-				singleAssetObj.put("serialNumber", financeRPT.getSerialNumber());
-				singleAssetObj.put("description", financeRPT.getDescription());
-				singleAssetObj.put("manufacturingDate", financeRPT.getManufacturingDate());
-				singleAssetObj.put("installationDate", financeRPT.getInstallationDate());
-				singleAssetObj.put("assetUpdateDate", financeRPT.getAssetUpdateDate());
-				singleAssetObj.put("warrantly", financeRPT.getWarrantly());
-				jsonObjectResponse.add(singleAssetObj);
-			}
-		} catch (Exception ex) {
-			LOGGER.error("EXCEPTION: {}", ex.getMessage(), ex);
-		}
-		return jsonObjectResponse;
 	}
 
 	@Override

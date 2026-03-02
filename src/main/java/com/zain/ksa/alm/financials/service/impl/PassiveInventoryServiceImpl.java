@@ -2,45 +2,104 @@ package com.zain.ksa.alm.financials.service.impl;
 
 import java.util.List;
 
-import javax.transaction.Transactional;
+import javax.persistence.EntityManager;
+import javax.persistence.PersistenceContext;
 
-import org.springframework.beans.factory.annotation.Autowired;
+// ─── CRITICAL FIX ────────────────────────────────────────────────────────────
+// Must use Spring's @Transactional, NOT javax.transaction.Transactional.
+// Only Spring's version has the readOnly attribute.
+import org.springframework.transaction.annotation.Transactional;
+// ─────────────────────────────────────────────────────────────────────────────
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import com.zain.ksa.alm.financials.dto.request.DynamicFilterRequest;
+import com.zain.ksa.alm.financials.dto.response.PagedResponse;
+import com.zain.ksa.alm.financials.dto.response.PassiveInventoryDTO;
 import com.zain.ksa.alm.financials.entity.PassiveInventory;
+import com.zain.ksa.alm.financials.exception.ResourceNotFoundException;
+import com.zain.ksa.alm.financials.mapper.InventoryMapper;
 import com.zain.ksa.alm.financials.repository.PassiveInventoryRepository;
 import com.zain.ksa.alm.financials.service.PassiveInventoryService;
 
 @Service
-@Transactional
 public class PassiveInventoryServiceImpl implements PassiveInventoryService {
 
-	private final PassiveInventoryRepository passiveInventoryRepository;
+    private static final Logger log = LoggerFactory.getLogger(PassiveInventoryServiceImpl.class);
 
-	@Autowired
-	public PassiveInventoryServiceImpl(PassiveInventoryRepository passiveInventoryRepository) {
-		this.passiveInventoryRepository = passiveInventoryRepository;
-	}
+    private final PassiveInventoryRepository repository;
+    private final InventoryMapper            mapper;
 
-	@Override
-	public PassiveInventory findBySerialNumber(String serialNumber) {
-		return passiveInventoryRepository.findBySerialNumber(serialNumber);
-	}
+    @PersistenceContext
+    private EntityManager entityManager;
 
-	@Override
-	public List<PassiveInventory> findAll() {
-		return passiveInventoryRepository.findAll();
-	}
+    private static final GenericSpecificationBuilder<PassiveInventory> SPEC_BUILDER =
+            new GenericSpecificationBuilder<>("recordDateTime");
 
-	@Override
-	public void saveAll(List<PassiveInventory> passiveInventories) {
-		passiveInventoryRepository.saveAll(passiveInventories);
-	}
+    public PassiveInventoryServiceImpl(PassiveInventoryRepository repository,
+                                       InventoryMapper mapper) {
+        this.repository = repository;
+        this.mapper     = mapper;
+    }
 
-	@Override
-	public Page<PassiveInventory> findAll(Pageable pageable) {
-		return passiveInventoryRepository.findAll(pageable);
-	}
+    // ── Legacy methods ────────────────────────────────────────────────────────
+
+    @Override
+    public PassiveInventory findBySerialNumber(String serialNumber) {
+        log.debug("findBySerialNumber: {}", serialNumber);
+        return repository.findBySerialNumber(serialNumber);
+    }
+
+    @Override
+    public List<PassiveInventory> findAll() {
+        return repository.findAll();
+    }
+
+    @Override
+    public void saveAll(List<PassiveInventory> items) {
+        repository.saveAll(items);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<PassiveInventory> findAll(Pageable pageable) {
+        return repository.findAll(pageable);
+    }
+
+    // ── New paginated dynamic filter ──────────────────────────────────────────
+
+    @Override
+    @Cacheable(
+        value  = "passive-inventory:list",
+        key    = "T(String).valueOf(#filter.siteId) + ':' + "
+               + "T(String).valueOf(#filter.isMapped) + ':' + "
+               + "T(String).valueOf(#filter.columnName) + ':' + "
+               + "T(String).valueOf(#filter.searchQuery) + ':' + "
+               + "#pageable.pageNumber + ':' + #pageable.pageSize"
+    )
+    @Transactional(readOnly = true)
+    public PagedResponse<PassiveInventoryDTO> findAll(DynamicFilterRequest filter, Pageable pageable) {
+        log.debug("findAll passive with filter: columnName={}, searchQuery={}, filterBy={}",
+                filter.getColumnName(), filter.getSearchQuery(), filter.getFilterBy());
+
+        return PagedResponse.of(
+            repository.findAll(SPEC_BUILDER.build(filter), pageable)
+                      .map(mapper::toDto)
+        );
+    }
+
+    @Override
+    @Cacheable(value = "passive-inventory:single", key = "#id")
+    @Transactional(readOnly = true)
+    public PassiveInventoryDTO findById(Integer id) {
+        log.debug("findById passive: {}", id);
+        return repository.findById(id)
+                .map(mapper::toDto)
+                .orElseThrow(() -> new ResourceNotFoundException("PassiveInventory", "id", id));
+    }
 }

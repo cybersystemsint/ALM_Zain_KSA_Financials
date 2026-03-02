@@ -1,187 +1,196 @@
-package com.zain.ksa.alm.financials.controller;
+// package com.zain.ksa.alm.financials.controller;
 
-import java.io.IOException;
-import java.util.Map;
+// import java.io.IOException;
+// import java.util.Map;
 
-import javax.servlet.http.HttpServletResponse;
+// import javax.servlet.http.HttpServletResponse;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+// import org.apache.logging.log4j.LogManager;
+// import org.apache.logging.log4j.Logger;
+// import org.springframework.beans.factory.annotation.Autowired;
+// import org.springframework.web.bind.annotation.CrossOrigin;
+// import org.springframework.web.bind.annotation.GetMapping;
+// import org.springframework.web.bind.annotation.PostMapping;
+// import org.springframework.web.bind.annotation.RequestBody;
+// import org.springframework.web.bind.annotation.RequestMapping;
+// import org.springframework.web.bind.annotation.RestController;
 
-import com.zain.ksa.alm.financials.service.AssetAllocationManagementService;
-import com.zain.ksa.alm.financials.service.AssetMaintenanceService;
-import com.zain.ksa.alm.financials.service.AssetReportService;
-import com.zain.ksa.alm.financials.service.AssetTransferManagementService;
-import com.zain.ksa.alm.financials.util.FarReportExcelExporter;
-import com.zain.ksa.alm.financials.service.FinancialReportManagementService;
-import com.zain.ksa.alm.financials.service.LicenseManagementService;
+// import com.zain.ksa.alm.financials.service.AssetAllocationManagementService;
+// import com.zain.ksa.alm.financials.service.AssetMaintenanceService;
+// import com.zain.ksa.alm.financials.service.AssetReportService;
+// import com.zain.ksa.alm.financials.service.AssetTransferManagementService;
+// import com.zain.ksa.alm.financials.util.FarReportExcelExporter;
+// import com.zain.ksa.alm.financials.util.FarReportServiceHelper;
+// import com.zain.ksa.alm.financials.service.LicenseManagementService;
 
-import net.minidev.json.JSONArray;
-import net.minidev.json.JSONObject;
+// import net.minidev.json.JSONArray;
+// import net.minidev.json.JSONObject;
 
-@CrossOrigin(origins = { "*" }, maxAge = 3600L)
-@RestController
-@RequestMapping({ "/" })
-public class AlmAssetManagementController {
+// @CrossOrigin(origins = { "*" }, maxAge = 3600L)
+// @RestController
+// @RequestMapping({ "/" })
+// public class AlmAssetManagementController {
 
-	private static final Logger LOGGER = LogManager.getLogger(AlmAssetManagementController.class);
+// 	private static final Logger LOGGER = LogManager.getLogger(AlmAssetManagementController.class);
 
-	private final AssetTransferManagementService assetTransferManagementService;
-	private final AssetAllocationManagementService assetAllocationManagementService;
-	private final AssetMaintenanceService assetMaintenanceService;
-	private final AssetReportService assetReportService;
-	private final FinancialReportManagementService financialReportManagementService;
-	private final LicenseManagementService licenseManagementService;
-	private final FarReportExcelExporter farReportExcelExporter;
+// 	private final AssetTransferManagementService assetTransferManagementService;
+// 	private final AssetAllocationManagementService assetAllocationManagementService;
+// 	private final AssetMaintenanceService assetMaintenanceService;
+// 	private final AssetReportService assetReportService;
+// 	private final LicenseManagementService licenseManagementService;
+// 	private final FarReportExcelExporter farReportExcelExporter;
+//     private final FarReportServiceHelper farReportServiceHelper;
 
-	@Autowired
-	public AlmAssetManagementController(AssetTransferManagementService assetTransferManagementService,
-			AssetAllocationManagementService assetAllocationManagementService,
-			AssetMaintenanceService assetMaintenanceService, AssetReportService assetReportService,
-			FinancialReportManagementService financialReportManagementService,
-			LicenseManagementService licenseManagementService,
-			FarReportExcelExporter farReportExcelExporter) {
-		this.assetTransferManagementService = assetTransferManagementService;
-		this.assetAllocationManagementService = assetAllocationManagementService;
-		this.assetMaintenanceService = assetMaintenanceService;
-		this.assetReportService = assetReportService;
-		this.financialReportManagementService = financialReportManagementService;
-		this.licenseManagementService = licenseManagementService;
-		this.farReportExcelExporter = farReportExcelExporter;
-	}
+// 	@Autowired
+// 	public AlmAssetManagementController(AssetTransferManagementService assetTransferManagementService,
+// 			AssetAllocationManagementService assetAllocationManagementService,
+// 			AssetMaintenanceService assetMaintenanceService, AssetReportService assetReportService,
+// 			LicenseManagementService licenseManagementService,
+// 			FarReportExcelExporter farReportExcelExporter,
+// 			FarReportServiceHelper farReportServiceHelper) {
+// 		this.assetTransferManagementService = assetTransferManagementService;
+// 		this.assetAllocationManagementService = assetAllocationManagementService;
+// 		this.assetMaintenanceService = assetMaintenanceService;
+// 		this.assetReportService = assetReportService;
+// 		this.licenseManagementService = licenseManagementService;
+// 		this.farReportExcelExporter = farReportExcelExporter;
+// 		this.farReportServiceHelper = farReportServiceHelper;
+// 	}
 
-	@PostMapping(value = "uploadLicenses", produces = "application/json")
-	public JSONObject uploadLicenses(@RequestBody String req, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: uploadLicenses");
-		return licenseManagementService.uploadLicenses(req);
-	}
+// 	@PostMapping(value = "uploadLicenses", produces = "application/json")
+// 	public JSONObject uploadLicenses(@RequestBody String req, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: uploadLicenses");
+// 		return licenseManagementService.uploadLicenses(req);
+// 	}
 
-	@GetMapping("/getLicenses")
-	public JSONArray getLicenses(HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: getLicenses");
-		return licenseManagementService.getAllLicenses();
-	}
+// 	@GetMapping("/getLicenses")
+// 	public JSONArray getLicenses(HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: getLicenses");
+// 		return licenseManagementService.getAllLicenses();
+// 	}
 
-	@GetMapping({ "getUnmappedActiveAssets" })
-	public JSONArray getUnmappedActiveAssets(HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: getUnmappedActiveAssets");
-		return assetReportService.getUnmappedActiveAssets();
-	}
+// 	// @PostMapping(value = "getFAR", produces = "application/json")
+// 	// public Map<String, Object> getFARKSA(@RequestBody JSONObject assetRequest) {
+// 	// 	LOGGER.info("Received request: getFAR");
+// 	// 	return financialReportManagementService.getFARReport(assetRequest);
+// 	// }
 
-	@PostMapping(value = "getFAR", produces = "application/json")
-	public Map<String, Object> getFARKSA(@RequestBody JSONObject assetRequest) {
-		LOGGER.info("Received request: getFAR");
-		return financialReportManagementService.getFARReport(assetRequest);
-	}
+// @PostMapping(value = "/far-report/getFAR", produces = "application/json")
+// public Map<String, Object> getFARKSA(@RequestBody JSONObject assetRequest) {
+//     LOGGER.info("Received request: getFAR");
 
-	@RequestMapping({ "uploadFAR" })
-	public JSONObject uploadFAR(@RequestBody String req, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: uploadFAR");
-		return financialReportManagementService.uploadFAR(req);
-	}
+//     String assetId     = assetRequest.containsKey("assetId")     ? assetRequest.getAsString("assetId")     : "";
+//     String columnName  = assetRequest.containsKey("columnName")  ? assetRequest.getAsString("columnName")  : "";
+//     String searchQuery = assetRequest.containsKey("searchQuery") ? assetRequest.getAsString("searchQuery") : "";
+//     String dateFrom    = assetRequest.containsKey("dateFrom")    ? assetRequest.getAsString("dateFrom")    : "";
+//     String dateTo      = assetRequest.containsKey("dateTo")      ? assetRequest.getAsString("dateTo")      : "";
+//     int page = Math.max(assetRequest.containsKey("page") ? assetRequest.getAsNumber("page").intValue() : 0, 0);
+//     int size = Math.min(Math.max(assetRequest.containsKey("size") ? assetRequest.getAsNumber("size").intValue() : 100, 1), 500);
 
-	@RequestMapping({ "uploadFR" })
-	public JSONObject uploadFR(@RequestBody String req, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: uploadFR");
-		return financialReportManagementService.uploadFinancialReport(req);
-	}
+//     return farReportServiceHelper.fetchFarReport(assetId, columnName, searchQuery, dateFrom, dateTo, page, size);
+// }
 
-	@RequestMapping({ "getFinancialReport" })
-	public JSONArray getFinancialReport(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: getFinancialReport");
-		return financialReportManagementService.getFinancialReport(assetRequest);
-	}
+// // 	@RequestMapping({ "uploadFAR" })
+// // 	public JSONObject uploadFAR(@RequestBody String req, HttpServletResponse httpResponse) {
+// // 		LOGGER.info("Received request: uploadFAR");
+// // 		return financialReportManagementService.uploadFAR(req);
+// // 	}
 
-	@RequestMapping({ "assetTransfer" })
-	public JSONObject assetTransfer(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: assetTransfer");
-		return assetTransferManagementService.transferAsset(assetRequest);
-	}
+// 	// @RequestMapping({ "uploadFR" })
+// 	// public JSONObject uploadFR(@RequestBody String req, HttpServletResponse httpResponse) {
+// 	// 	LOGGER.info("Received request: uploadFR");
+// 	// 	return financialReportManagementService.uploadFinancialReport(req);
+// 	// }
 
-	@RequestMapping({ "getApprovedAssets" })
-	public JSONArray getApprovedAssets(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: getApprovedAssets");
-		return assetTransferManagementService.getApprovedAssets(assetRequest);
-	}
+// 	// @RequestMapping({ "getFinancialReport" })
+// 	// public JSONArray getFinancialReport(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 	// 	LOGGER.info("Received request: getFinancialReport");
+// 	// 	return financialReportManagementService.getFinancialReport(assetRequest);
+// 	// }
 
-	@RequestMapping({ "getAssetsForApproval" })
-	public JSONArray getAssetsForApproval(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: getAssetsForApproval");
-		return assetTransferManagementService.getAssetsForApproval(assetRequest);
-	}
+// 	@RequestMapping({ "assetTransfer" })
+// 	public JSONObject assetTransfer(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: assetTransfer");
+// 		return assetTransferManagementService.transferAsset(assetRequest);
+// 	}
 
-	@RequestMapping({ "approveAssetTransfer" })
-	public JSONObject approveAssetTransfer(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: approveAssetTransfer");
-		return assetTransferManagementService.approveAssetTransfer(assetRequest);
-	}
+// 	@RequestMapping({ "getApprovedAssets" })
+// 	public JSONArray getApprovedAssets(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: getApprovedAssets");
+// 		return assetTransferManagementService.getApprovedAssets(assetRequest);
+// 	}
 
-	@RequestMapping({ "allocateAsset" })
-	public JSONObject allocateAsset(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: allocateAsset");
-		return assetAllocationManagementService.allocateAsset(assetRequest);
-	}
+// 	@RequestMapping({ "getAssetsForApproval" })
+// 	public JSONArray getAssetsForApproval(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: getAssetsForApproval");
+// 		return assetTransferManagementService.getAssetsForApproval(assetRequest);
+// 	}
 
-	@RequestMapping({ "getUnapprovedAllocatedAsset" })
-	public JSONArray getUnapprovedAllocatedAsset(@RequestBody JSONObject assetRequest,
-			HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: getUnapprovedAllocatedAsset");
-		return assetAllocationManagementService.getUnapprovedAllocations(assetRequest);
-	}
+// 	@RequestMapping({ "approveAssetTransfer" })
+// 	public JSONObject approveAssetTransfer(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: approveAssetTransfer");
+// 		return assetTransferManagementService.approveAssetTransfer(assetRequest);
+// 	}
 
-	@RequestMapping({ "approveAssetAllocation" })
-	public JSONObject approveAssetAllocation(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: approveAssetAllocation");
-		return assetAllocationManagementService.approveAllocation(assetRequest);
-	}
+// 	@RequestMapping({ "allocateAsset" })
+// 	public JSONObject allocateAsset(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: allocateAsset");
+// 		return assetAllocationManagementService.allocateAsset(assetRequest);
+// 	}
 
-	@RequestMapping({ "assetJournal" })
-	public void assetCaptureJournal(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: assetJournal");
-		assetReportService.captureAssetJournal(assetRequest);
-	}
+// 	@RequestMapping({ "getUnapprovedAllocatedAsset" })
+// 	public JSONArray getUnapprovedAllocatedAsset(@RequestBody JSONObject assetRequest,
+// 			HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: getUnapprovedAllocatedAsset");
+// 		return assetAllocationManagementService.getUnapprovedAllocations(assetRequest);
+// 	}
 
-	@RequestMapping({ "getAssetJournal" })
-	public JSONArray getAssetJournal(HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: getAssetJournal");
-		return assetReportService.getAssetJournal();
-	}
+// 	@RequestMapping({ "approveAssetAllocation" })
+// 	public JSONObject approveAssetAllocation(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: approveAssetAllocation");
+// 		return assetAllocationManagementService.approveAllocation(assetRequest);
+// 	}
 
-	@RequestMapping({ "updateWarrantDetails" })
-	public JSONObject updateWarrantDetails(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: updateWarrantDetails");
-		return assetMaintenanceService.updateWarrantyDetails(assetRequest);
-	}
+// 	@RequestMapping({ "assetJournal" })
+// 	public void assetCaptureJournal(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: assetJournal");
+// 		assetReportService.captureAssetJournal(assetRequest);
+// 	}
 
-	@RequestMapping({ "updateDepreciationDetails" })
-	public JSONObject updateDepreciationDetails(@RequestBody JSONObject assetRequest,
-			HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: updateDepreciationDetails");
-		return assetMaintenanceService.updateDepreciationDetails(assetRequest);
-	}
+// 	@RequestMapping({ "getAssetJournal" })
+// 	public JSONArray getAssetJournal(HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: getAssetJournal");
+// 		return assetReportService.getAssetJournal();
+// 	}
 
-	@RequestMapping({ "getAssetDepreciation" })
-	public JSONObject getAssetDepreciation(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: getAssetDepreciation");
-		return assetMaintenanceService.getAssetDepreciation(assetRequest);
-	}
+// 	@RequestMapping({ "updateWarrantDetails" })
+// 	public JSONObject updateWarrantDetails(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: updateWarrantDetails");
+// 		return assetMaintenanceService.updateWarrantyDetails(assetRequest);
+// 	}
 
-	@RequestMapping({ "assetDisposal" })
-	public JSONObject doAssetDisposal(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-		LOGGER.info("Received request: assetDisposal");
-		return assetMaintenanceService.disposeAsset(assetRequest);
-	}
+// 	@RequestMapping({ "updateDepreciationDetails" })
+// 	public JSONObject updateDepreciationDetails(@RequestBody JSONObject assetRequest,
+// 			HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: updateDepreciationDetails");
+// 		return assetMaintenanceService.updateDepreciationDetails(assetRequest);
+// 	}
 
-	@GetMapping("/exportFarReport")
-	public void exportFarReport(HttpServletResponse httpResponse) throws IOException {
-		LOGGER.info("Received request: exportFarReport");
-		farReportExcelExporter.exportFarReportToResponse(httpResponse);
-	}
-}
+// 	@RequestMapping({ "getAssetDepreciation" })
+// 	public JSONObject getAssetDepreciation(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: getAssetDepreciation");
+// 		return assetMaintenanceService.getAssetDepreciation(assetRequest);
+// 	}
+
+// 	@RequestMapping({ "assetDisposal" })
+// 	public JSONObject doAssetDisposal(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
+// 		LOGGER.info("Received request: assetDisposal");
+// 		return assetMaintenanceService.disposeAsset(assetRequest);
+// 	}
+
+// 	// @GetMapping("/exportFarReport")
+// 	// public void exportFarReport(HttpServletResponse httpResponse) throws IOException {
+// 	// 	LOGGER.info("Received request: exportFarReport");
+// 	// 	farReportExcelExporter.exportFarReportToResponse(httpResponse);
+// 	// }
+// }

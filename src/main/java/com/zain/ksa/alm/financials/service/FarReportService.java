@@ -3,21 +3,34 @@ package com.zain.ksa.alm.financials.service;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import com.zain.ksa.alm.financials.dto.request.DynamicFilterRequest;
+import com.zain.ksa.alm.financials.dto.response.FarReportDTO;
+import com.zain.ksa.alm.financials.dto.response.PagedResponse;
 import com.zain.ksa.alm.financials.entity.FarReport;
 
 public interface FarReportService {
 
-	FarReport save(FarReport paramtb_FinancialReport);
+    FarReport save(FarReport farReport);
+    List<FarReport> saveAll(List<FarReport> farReports);
+    List<FarReport> findByAssetId(String assetId);
+    Page<FarReport> findAll(Pageable pageable);
 
-	List<FarReport> findByAssetId(String paramString);
+    /** Paginated filtered query — data only, no aggregates. */
+    PagedResponse<FarReportDTO> findAll(DynamicFilterRequest filter, Pageable pageable);
 
-	Page<FarReport> findAll(Pageable pageable);
+    /**
+     * Paginated filtered query WITH summary aggregates (cost, NBV, depreciation).
+     * Returns both filtered sums and unfiltered grand totals.
+     */
+    Map<String, Object> findAllWithSummary(DynamicFilterRequest filter, Pageable pageable);
 
-	List<FarReport> findAll(int page, int size);
+    Map<String, Object> processUpload(List<Map<String, Object>> rows, String source);
 
-	void streamExportToCsv(PrintWriter writer, String column, String value, String operator) throws IOException;
+    void streamExportToCsv(PrintWriter writer, String column, String value,
+                           String operator) throws IOException;
 }

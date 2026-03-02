@@ -91,7 +91,6 @@ public class AssetTrackingServiceImpl implements AssetTrackingService {
 				if (nodes != null && nodes.getSerialNumber() != null && !nodes.getSerialNumber().isEmpty()) {
 					tracking.setModel(nodes.getModel());
 					tracking.setManufacturer(String.valueOf(nodes.getManufacturerId()));
-					tracking.setManufacturerDate(nodes.getManufacturingDate());
 				}
 
 				tracking.setChangeDate(newDate);

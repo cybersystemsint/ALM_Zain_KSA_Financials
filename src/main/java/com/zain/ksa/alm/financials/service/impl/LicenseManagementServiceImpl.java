@@ -160,11 +160,9 @@ public class LicenseManagementServiceImpl implements LicenseManagementService {
 	}
 
 	private void ensureNodeExists(org.json.JSONObject jsonObject, String nodeId) throws ParseException {
-		List<Node> nodelist = nodeService.findByNode(nodeId);
+		List<Node> nodelist = nodeService.findByNodeName(nodeId);
 		if (nodelist.isEmpty()) {
 			Node node = new Node();
-			node.setRecordDateTime(getCurrentSqlDate());
-			node.setNode(nodeId);
 			node.setSiteId(Integer.parseInt(jsonObject.getString("siteId")));
 			NodeType nodeType = nodeTypeService.findByNodeType(jsonObject.getString("nodeType"));
 			node.setNodeTypeId(nodeType.getId());

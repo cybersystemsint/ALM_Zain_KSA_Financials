@@ -1,204 +1,147 @@
 package com.zain.ksa.alm.financials.entity;
 
-import java.io.Serializable;
-import java.sql.Date;
-import java.sql.Timestamp;
 import javax.persistence.*;
+import java.io.Serializable;
+import java.time.LocalDateTime;
+import java.util.Date;
+
 
 @Entity
-@Table(name = "tb_Node")
+@Table(
+    name = "tb_Node",
+    indexes = {
+        @Index(name = "idx_node_serialNumber", columnList = "serialNumber"),
+        @Index(name = "idx_node_siteId",       columnList = "siteId"),
+        @Index(name = "idx_node_isMapped",     columnList = "isMapped")
+    }
+)
 public class Node implements Serializable {
 
-	private static final long serialVersionUID = 1L;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Integer id;
 
-	@Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	private int id;
-	// @Column(name = "recordDateTime", nullable = false, columnDefinition =
-	// "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-	private Date recordDateTime;
+    // DB: timestamp DEFAULT CURRENT_TIMESTAMP
+    @Column(name = "recordDateTime")
+    private LocalDateTime recordDateTime;
 
-	private String node;
-	private Integer siteId;
-	private String technologySupported;
-	private Integer nodeTypeId;
-	private Integer manufacturerId;
-	private String networkElement;
-	private String partNumber;
-	private String model;
-	private String inventoryFlag;
-	private String serialNumber;
+    // DB column name is "node" — mapped to nodeName field
+    @Column(name = "node")
+    private String nodeName;
 
-	// @Column(columnDefinition = "TEXT")
-	private String description;
+    private Integer siteId;
 
-	private Date manufacturingDate;
-	private String issueNumber;
-	private Timestamp insertDate;
-	private Timestamp updateDate;
-	private String changedBy;
-	private Timestamp changedDate;
+    // Extra columns visible in DB screenshot
+    private String latitude;
+    private String longitude;
 
-	private Boolean isMapped;
+    private String technologySupported;
+    private Integer nodeTypeId;
+    private Integer manufacturerId;
 
-	public Boolean getIsMapped() {
-		return isMapped;
-	}
+    @Column(name = "networkElement", length = 100)
+    private String networkElement;
 
-	public void setIsMapped(Boolean isMapped) {
-		this.isMapped = isMapped;
-	}
+    private String partNumber;
+    private String model;
+    private String inventoryFlag;
+    private String serialNumber;
 
-	public int getId() {
-		return id;
-	}
+    @Column(columnDefinition = "TEXT")
+    private String description;
 
-	public void setId(int id) {
-		this.id = id;
-	}
+    // DB type is "date" — java.util.Date maps cleanly
+    @Temporal(TemporalType.DATE)
+    private Date manufacturingDate;
 
-	public Date getRecordDateTime() {
-		return recordDateTime;
-	}
+    private String issueNumber;
 
-	public void setRecordDateTime(Date recordDateTime) {
-		this.recordDateTime = recordDateTime;
-	}
+    @Column(name = "insertDate")
+    private LocalDateTime insertDate;
 
-	public String getNode() {
-		return node;
-	}
+    @Column(name = "updateDate")
+    private LocalDateTime updateDate;
 
-	public void setNode(String node) {
-		this.node = node;
-	}
+    // DB column inventoryType is int (column 20 in screenshot)
+    @Column(name = "inventoryType")
+    private Integer inventoryType;
 
-	public Integer getSiteId() {
-		return siteId;
-	}
+    private String changedBy;
+    private Date changedDate;
 
-	public void setSiteId(Integer siteId) {
-		this.siteId = siteId;
-	}
+    // DB: tinyint(1)
+    private Boolean isMapped;
 
-	public String getTechnologySupported() {
-		return technologySupported;
-	}
+    public Node() {}
 
-	public void setTechnologySupported(String technologySupported) {
-		this.technologySupported = technologySupported;
-	}
+    // ─── Getters & Setters ────────────────────────────────────────────────────
 
-	public Integer getNodeTypeId() {
-		return nodeTypeId;
-	}
+    public Integer getId() { return id; }
+    public void setId(Integer id) { this.id = id; }
 
-	public void setNodeTypeId(Integer nodeTypeId) {
-		this.nodeTypeId = nodeTypeId;
-	}
+    public LocalDateTime getRecordDateTime() { return recordDateTime; }
+    public void setRecordDateTime(LocalDateTime recordDateTime) { this.recordDateTime = recordDateTime; }
 
-	public Integer getManufacturerId() {
-		return manufacturerId;
-	}
+    public String getNodeName() { return nodeName; }
+    public void setNodeName(String nodeName) { this.nodeName = nodeName; }
 
-	public void setManufacturerId(Integer manufacturerId) {
-		this.manufacturerId = manufacturerId;
-	}
+    public Integer getSiteId() { return siteId; }
+    public void setSiteId(Integer siteId) { this.siteId = siteId; }
 
-	public String getNetworkElement() {
-		return networkElement;
-	}
+    public String getLatitude() { return latitude; }
+    public void setLatitude(String latitude) { this.latitude = latitude; }
 
-	public void setNetworkElement(String networkElement) {
-		this.networkElement = networkElement;
-	}
+    public String getLongitude() { return longitude; }
+    public void setLongitude(String longitude) { this.longitude = longitude; }
 
-	public String getPartNumber() {
-		return partNumber;
-	}
+    public String getTechnologySupported() { return technologySupported; }
+    public void setTechnologySupported(String technologySupported) { this.technologySupported = technologySupported; }
 
-	public void setPartNumber(String partNumber) {
-		this.partNumber = partNumber;
-	}
+    public Integer getNodeTypeId() { return nodeTypeId; }
+    public void setNodeTypeId(Integer nodeTypeId) { this.nodeTypeId = nodeTypeId; }
 
-	public String getModel() {
-		return model;
-	}
+    public Integer getManufacturerId() { return manufacturerId; }
+    public void setManufacturerId(Integer manufacturerId) { this.manufacturerId = manufacturerId; }
 
-	public void setModel(String model) {
-		this.model = model;
-	}
+    public String getNetworkElement() { return networkElement; }
+    public void setNetworkElement(String networkElement) { this.networkElement = networkElement; }
 
-	public String getInventoryFlag() {
-		return inventoryFlag;
-	}
+    public String getPartNumber() { return partNumber; }
+    public void setPartNumber(String partNumber) { this.partNumber = partNumber; }
 
-	public void setInventoryFlag(String inventoryFlag) {
-		this.inventoryFlag = inventoryFlag;
-	}
+    public String getModel() { return model; }
+    public void setModel(String model) { this.model = model; }
 
-	public String getSerialNumber() {
-		return serialNumber;
-	}
+    public String getInventoryFlag() { return inventoryFlag; }
+    public void setInventoryFlag(String inventoryFlag) { this.inventoryFlag = inventoryFlag; }
 
-	public void setSerialNumber(String serialNumber) {
-		this.serialNumber = serialNumber;
-	}
+    public String getSerialNumber() { return serialNumber; }
+    public void setSerialNumber(String serialNumber) { this.serialNumber = serialNumber; }
 
-	public String getDescription() {
-		return description;
-	}
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 
-	public void setDescription(String description) {
-		this.description = description;
-	}
+    public Date getManufacturingDate() { return manufacturingDate; }
+    public void setManufacturingDate(Date manufacturingDate) { this.manufacturingDate = manufacturingDate; }
 
-	public Date getManufacturingDate() {
-		return manufacturingDate;
-	}
+    public String getIssueNumber() { return issueNumber; }
+    public void setIssueNumber(String issueNumber) { this.issueNumber = issueNumber; }
 
-	public void setManufacturingDate(Date manufacturingDate) {
-		this.manufacturingDate = manufacturingDate;
-	}
+    public LocalDateTime getInsertDate() { return insertDate; }
+    public void setInsertDate(LocalDateTime insertDate) { this.insertDate = insertDate; }
 
-	public String getIssueNumber() {
-		return issueNumber;
-	}
+    public LocalDateTime getUpdateDate() { return updateDate; }
+    public void setUpdateDate(LocalDateTime updateDate) { this.updateDate = updateDate; }
 
-	public void setIssueNumber(String issueNumber) {
-		this.issueNumber = issueNumber;
-	}
+    public Integer getInventoryType() { return inventoryType; }
+    public void setInventoryType(Integer inventoryType) { this.inventoryType = inventoryType; }
 
-	public Timestamp getInsertDate() {
-		return insertDate;
-	}
+    public String getChangedBy() { return changedBy; }
+    public void setChangedBy(String changedBy) { this.changedBy = changedBy; }
 
-	public void setInsertDate(Timestamp insertDate) {
-		this.insertDate = insertDate;
-	}
+    public Date getChangedDate() { return changedDate; }
+    public void setChangedDate(Date changedDate) { this.changedDate = changedDate; }
 
-	public Timestamp getUpdateDate() {
-		return updateDate;
-	}
-
-	public void setUpdateDate(Timestamp updateDate) {
-		this.updateDate = updateDate;
-	}
-
-	public String getChangedBy() {
-		return changedBy;
-	}
-
-	public void setChangedBy(String changedBy) {
-		this.changedBy = changedBy;
-	}
-
-	public Timestamp getChangedDate() {
-		return changedDate;
-	}
-
-	public void setChangedDate(Timestamp changedDate) {
-		this.changedDate = changedDate;
-	}
-
+    public Boolean getIsMapped() { return isMapped; }
+    public void setIsMapped(Boolean isMapped) { this.isMapped = isMapped; }
 }

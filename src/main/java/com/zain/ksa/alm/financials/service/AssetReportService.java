@@ -5,7 +5,6 @@ import net.minidev.json.JSONObject;
 
 public interface AssetReportService {
 
-	JSONArray getUnmappedActiveAssets();
 
 	void captureAssetJournal(JSONObject request);
 
