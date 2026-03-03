@@ -1,6 +1,7 @@
 package com.zain.ksa.alm.financials.repository;
 
 import com.zain.ksa.alm.financials.entity.UnmappedActiveInventory;
+import com.zain.ksa.alm.financials.repository.custom.FilteredStreamRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -44,7 +45,8 @@ import static org.hibernate.jpa.QueryHints.HINT_READONLY;
 @Repository
 public interface UnmappedActiveInventoryRepository
         extends JpaRepository<UnmappedActiveInventory, Long>,
-                JpaSpecificationExecutor<UnmappedActiveInventory> {
+                JpaSpecificationExecutor<UnmappedActiveInventory>,
+                FilteredStreamRepository<UnmappedActiveInventory> {
 
     boolean existsBySerialNumber(String serialNumber);
 
@@ -55,11 +57,7 @@ public interface UnmappedActiveInventoryRepository
     int deleteBySerialNumberIn(@Param("serials") List<String> serials);
 
     /**
-     * Streams all active unmapped inventory records using a server-side cursor.
-     *
-     * <p>Fetch size of 500 means the JDBC driver fetches 500 rows per network
-     * round-trip. This balances memory (500 × ~2 KB ≈ 1 MB) against network
-     * latency (fewer round-trips than row-at-a-time).</p>
+     * Streams all active unmapped inventory records (unfiltered) using a server-side cursor.
      */
     @QueryHints(value = {
         @QueryHint(name = HINT_FETCH_SIZE, value = "500"),

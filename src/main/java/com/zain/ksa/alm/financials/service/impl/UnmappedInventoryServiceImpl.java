@@ -4,6 +4,7 @@ import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
 import javax.servlet.http.HttpServletResponse;
 
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Async;
 
@@ -24,6 +25,8 @@ import com.zain.ksa.alm.financials.scheduler.UnmappedInventoryScheduler;
 import com.zain.ksa.alm.financials.service.UnmappedInventoryService;
 import com.zain.ksa.alm.financials.service.export.ExportStrategyFactory;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 @Service
 public class UnmappedInventoryServiceImpl implements UnmappedInventoryService {
 
@@ -33,22 +36,30 @@ public class UnmappedInventoryServiceImpl implements UnmappedInventoryService {
     private final UnmappedPassiveInventoryRepository passiveRepo;
     private final UnmappedITInventoryRepository      itRepo;
     private final InventoryMapper                    mapper;
-    private final ExportStrategyFactory              exportFactory; // single instance, no <T>
+    private final ExportStrategyFactory              exportFactory;
     private final UnmappedInventoryScheduler         scheduler;
 
     @PersistenceContext
     private EntityManager entityManager;
 
-    private static final GenericSpecificationBuilder<UnmappedActiveInventory>  ACTIVE_SPEC  = new GenericSpecificationBuilder<>(null);
-    private static final GenericSpecificationBuilder<UnmappedPassiveInventory> PASSIVE_SPEC = new GenericSpecificationBuilder<>(null);
-    private static final GenericSpecificationBuilder<UnmappedITInventory>      IT_SPEC      = new GenericSpecificationBuilder<>(null);
+    // For Active inventory
+    private static final GenericSpecificationBuilder<UnmappedActiveInventory> ACTIVE_SPEC =
+            new GenericSpecificationBuilder<>("recordDateTime");
+
+    // For Passive inventory
+    private static final GenericSpecificationBuilder<UnmappedPassiveInventory> PASSIVE_SPEC =
+            new GenericSpecificationBuilder<>("recordDateTime");
+
+    // For IT inventory
+    private static final GenericSpecificationBuilder<UnmappedITInventory> IT_SPEC =
+            new GenericSpecificationBuilder<>("recordDatetime");
 
     public UnmappedInventoryServiceImpl(
             UnmappedActiveInventoryRepository activeRepo,
             UnmappedPassiveInventoryRepository passiveRepo,
             UnmappedITInventoryRepository itRepo,
             InventoryMapper mapper,
-            ExportStrategyFactory exportFactory,   // no <T> here either
+            ExportStrategyFactory exportFactory,
             UnmappedInventoryScheduler scheduler) {
         this.activeRepo    = activeRepo;
         this.passiveRepo   = passiveRepo;
@@ -62,57 +73,85 @@ public class UnmappedInventoryServiceImpl implements UnmappedInventoryService {
 
     @Override
     @Cacheable(value = "unmapped-active:list",
-               key   = "T(String).valueOf(#filter.siteId) + ':' + "
-                     + "T(String).valueOf(#filter.columnName) + ':' + "
-                     + "T(String).valueOf(#filter.searchQuery) + ':' + "
-                     + "#pageable.pageNumber + ':' + #pageable.pageSize")
+               key = "T(String).valueOf(#filter.siteId) + ':' + "
+                   + "T(String).valueOf(#filter.columnName) + ':' + "
+                   + "T(String).valueOf(#filter.searchQuery) + ':' + "
+                   + "#pageable.pageNumber + ':' + #pageable.pageSize")
     @Transactional(readOnly = true)
     public PagedResponse<UnmappedActiveInventoryDTO> findAllActive(
             DynamicFilterRequest filter, Pageable pageable) {
+
+        long startSeq = (long) pageable.getPageNumber() * pageable.getPageSize();
+        AtomicLong sequence = new AtomicLong(startSeq);
+
         return PagedResponse.of(
-            activeRepo.findAll(ACTIVE_SPEC.build(filter), pageable).map(mapper::toDto)
+            activeRepo.findAll(ACTIVE_SPEC.build(filter), pageable)
+                .map(mapper::toDto)
+                .map(dto -> dto.withSequenceNo(sequence.incrementAndGet()))
         );
     }
 
     @Override
     @Cacheable(value = "unmapped-passive:list",
-               key   = "T(String).valueOf(#filter.siteId) + ':' + "
-                     + "T(String).valueOf(#filter.columnName) + ':' + "
-                     + "T(String).valueOf(#filter.searchQuery) + ':' + "
-                     + "#pageable.pageNumber + ':' + #pageable.pageSize")
+               key = "T(String).valueOf(#filter.siteId) + ':' + "
+                   + "T(String).valueOf(#filter.columnName) + ':' + "
+                   + "T(String).valueOf(#filter.searchQuery) + ':' + "
+                   + "#pageable.pageNumber + ':' + #pageable.pageSize")
     @Transactional(readOnly = true)
     public PagedResponse<UnmappedPassiveInventoryDTO> findAllPassive(
             DynamicFilterRequest filter, Pageable pageable) {
+
+        long startSeq = (long) pageable.getPageNumber() * pageable.getPageSize();
+        AtomicLong sequence = new AtomicLong(startSeq);
+
         return PagedResponse.of(
-            passiveRepo.findAll(PASSIVE_SPEC.build(filter), pageable).map(mapper::toDto)
+            passiveRepo.findAll(PASSIVE_SPEC.build(filter), pageable)
+                .map(mapper::toDto)
+                .map(dto -> dto.withSequenceNo(sequence.incrementAndGet()))
         );
     }
 
     @Override
     @Cacheable(value = "unmapped-it:list",
-               key   = "T(String).valueOf(#filter.siteId) + ':' + "
-                     + "T(String).valueOf(#filter.columnName) + ':' + "
-                     + "T(String).valueOf(#filter.searchQuery) + ':' + "
-                     + "#pageable.pageNumber + ':' + #pageable.pageSize")
+               key = "T(String).valueOf(#filter.siteId) + ':' + "
+                   + "T(String).valueOf(#filter.columnName) + ':' + "
+                   + "T(String).valueOf(#filter.searchQuery) + ':' + "
+                   + "#pageable.pageNumber + ':' + #pageable.pageSize")
     @Transactional(readOnly = true)
     public PagedResponse<UnmappedITInventoryDTO> findAllIT(
             DynamicFilterRequest filter, Pageable pageable) {
+
+        long startSeq = (long) pageable.getPageNumber() * pageable.getPageSize();
+        AtomicLong sequence = new AtomicLong(startSeq);
+
         return PagedResponse.of(
-            itRepo.findAll(IT_SPEC.build(filter), pageable).map(mapper::toDto)
+            itRepo.findAll(IT_SPEC.build(filter), pageable)
+                .map(mapper::toDto)
+                .map(dto -> dto.withSequenceNo(sequence.incrementAndGet()))
         );
     }
 
-    // ── Export (sync — writes directly to HTTP response) ──────────────────────
+    // ── Export (sync — writes directly to HTTP response, WITH FILTER) ─────────
 
     @Override
     @Transactional(readOnly = true)
     public void exportActiveToResponse(DynamicFilterRequest filter, ExportFormat format,
                                        HttpServletResponse response) throws Exception {
         log.info("Exporting unmapped active inventory, format={}", format);
-        try (var stream = activeRepo.streamAll()) {
+
+        Specification<UnmappedActiveInventory> spec = ACTIVE_SPEC.build(filter);
+
+        try (var stream = (spec != null ? activeRepo.streamAll(spec) : activeRepo.streamAll())) {
+            AtomicLong sequence = new AtomicLong(1);
+
             exportFactory.<UnmappedActiveInventoryDTO>resolve(format)
-                    .export(stream.peek(entityManager::detach).map(mapper::toDto),
-                            response, "unmapped_active_export");
+                .export(
+                    stream.peek(entityManager::detach)
+                          .map(mapper::toDto)
+                          .map(dto -> dto.withSequenceNo(sequence.getAndIncrement())),
+                    response,
+                    "unmapped_active_export"
+                );
         }
     }
 
@@ -121,10 +160,20 @@ public class UnmappedInventoryServiceImpl implements UnmappedInventoryService {
     public void exportPassiveToResponse(DynamicFilterRequest filter, ExportFormat format,
                                         HttpServletResponse response) throws Exception {
         log.info("Exporting unmapped passive inventory, format={}", format);
-        try (var stream = passiveRepo.streamAll()) {
+
+        Specification<UnmappedPassiveInventory> spec = PASSIVE_SPEC.build(filter);
+
+        try (var stream = (spec != null ? passiveRepo.streamAll(spec) : passiveRepo.streamAll())) {
+            AtomicLong sequence = new AtomicLong(1);
+
             exportFactory.<UnmappedPassiveInventoryDTO>resolve(format)
-                    .export(stream.peek(entityManager::detach).map(mapper::toDto),
-                            response, "unmapped_passive_export");
+                .export(
+                    stream.peek(entityManager::detach)
+                          .map(mapper::toDto)
+                          .map(dto -> dto.withSequenceNo(sequence.getAndIncrement())),
+                    response,
+                    "unmapped_passive_export"
+                );
         }
     }
 
@@ -133,10 +182,20 @@ public class UnmappedInventoryServiceImpl implements UnmappedInventoryService {
     public void exportITToResponse(DynamicFilterRequest filter, ExportFormat format,
                                    HttpServletResponse response) throws Exception {
         log.info("Exporting unmapped IT inventory, format={}", format);
-        try (var stream = itRepo.streamAll()) {
+
+        Specification<UnmappedITInventory> spec = IT_SPEC.build(filter);
+
+        try (var stream = (spec != null ? itRepo.streamAll(spec) : itRepo.streamAll())) {
+            AtomicLong sequence = new AtomicLong(1);
+
             exportFactory.<UnmappedITInventoryDTO>resolve(format)
-                    .export(stream.peek(entityManager::detach).map(mapper::toDto),
-                            response, "unmapped_it_export");
+                .export(
+                    stream.peek(entityManager::detach)
+                          .map(mapper::toDto)
+                          .map(dto -> dto.withSequenceNo(sequence.getAndIncrement())),
+                    response,
+                    "unmapped_it_export"
+                );
         }
     }
 

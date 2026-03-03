@@ -15,6 +15,16 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Manages export job lifecycle: creation, status tracking, file cleanup.
+ *
+ * <h3>Changes from previous version</h3>
+ * <p>None to the public API or job lifecycle. The only internal change is that
+ * {@link #runExport} now calls {@link ExportExecutor#execute} which manages its
+ * own bounded thread pool and semaphore, instead of relying on Spring's
+ * {@code @Async("exportTaskExecutor")}. This gives tighter control over
+ * concurrency, queue depth, and backpressure.</p>
+ */
 @Service
 public class ExportJobServiceImpl implements ExportJobService {
 
@@ -45,14 +55,12 @@ public class ExportJobServiceImpl implements ExportJobService {
             JobInfo preWarmed = jobs.get(preWarmId);
 
             if (preWarmed != null && "COMPLETED".equals(preWarmed.status)) {
-                // Guard: job says COMPLETED but file may be gone (disk cleanup, restart, etc.)
                 boolean fileExists = preWarmed.filePath != null
                         && new File(preWarmed.filePath).exists();
                 if (fileExists) {
                     log.info("Serving pre-warmed export for type={} format={}", exportType, format);
                     return preWarmId;
                 }
-                // File gone — drop the stale job record and fall through to on-demand
                 log.warn("Pre-warmed file missing on disk for jobId={}, falling back to on-demand",
                         preWarmId);
                 jobs.remove(preWarmId);
@@ -63,11 +71,9 @@ public class ExportJobServiceImpl implements ExportJobService {
                 return preWarmId;
             }
 
-            // Pre-warm missing or FAILED → fall through to on-demand
             log.warn("Pre-warmed export unavailable for type={}, running on-demand", exportType);
         }
 
-        // ── On-demand path (filtered or pre-warm unavailable) ─────────────────
         return runExport(exportType, filter, format,
                 UUID.randomUUID().toString().substring(0, 8), false);
     }
@@ -102,6 +108,7 @@ public class ExportJobServiceImpl implements ExportJobService {
         job.isPreWarmed = isPreWarmed;
         jobs.put(jobId, job);
 
+        // ExportExecutor manages its own thread pool + semaphore internally
         exportExecutor.execute(
                 jobId, exportType, filter, format, filePath,
                 (totalRows, processedRows) -> {
@@ -127,7 +134,7 @@ public class ExportJobServiceImpl implements ExportJobService {
         return jobId;
     }
 
-    // ── Invalidate (called before scheduler re-runs pre-warm) ─────────────────
+    // ── Invalidate ────────────────────────────────────────────────────────────
 
     @Override
     public void invalidateExport(String jobId) {
@@ -174,7 +181,6 @@ public class ExportJobServiceImpl implements ExportJobService {
 
         if ("COMPLETED".equals(job.status)) {
             result.put("downloadUrl", "/exports/download/" + job.jobId);
-            // Pre-warmed jobs don't expire on the normal retention clock
             if (!job.isPreWarmed) {
                 result.put("expiresAt", job.startedAt.plusHours(retentionHours).toString());
             }
@@ -214,7 +220,7 @@ public class ExportJobServiceImpl implements ExportJobService {
                 : "text/csv;charset=UTF-8";
     }
 
-    // ── Cleanup — only on-demand jobs, never pre-warmed ───────────────────────
+    // ── Cleanup — only on-demand jobs ─────────────────────────────────────────
 
     @Override
     @Scheduled(fixedRate = 3600000) // every hour
@@ -222,8 +228,6 @@ public class ExportJobServiceImpl implements ExportJobService {
         LocalDateTime cutoff = LocalDateTime.now().minusHours(retentionHours);
         jobs.entrySet().removeIf(entry -> {
             JobInfo job = entry.getValue();
-
-            // Pre-warmed jobs are managed exclusively by the scheduler, never auto-cleaned
             if (job.isPreWarmed) return false;
 
             if (job.startedAt != null && job.startedAt.isBefore(cutoff)) {
@@ -244,11 +248,13 @@ public class ExportJobServiceImpl implements ExportJobService {
 
     private boolean isUnfiltered(DynamicFilterRequest filter) {
         if (filter == null) return true;
+        boolean noSearch = (filter.getColumnName() == null || filter.getColumnName().isBlank())
+                        && (filter.getSearchQuery() == null || filter.getSearchQuery().isBlank());
         Map<String, String> filterBy = filter.getFilterBy();
         boolean noFilters = filterBy == null || filterBy.values().stream()
                 .allMatch(v -> v == null || v.isBlank());
         boolean noDates = filter.getDateFrom() == null && filter.getDateTo() == null;
-        return noFilters && noDates;
+        return noSearch && noFilters && noDates;
     }
 
     // ── JobInfo ───────────────────────────────────────────────────────────────
@@ -263,7 +269,7 @@ public class ExportJobServiceImpl implements ExportJobService {
         String errorMessage;
         LocalDateTime startedAt;
         LocalDateTime completedAt;
-        boolean isPreWarmed = false;    // exempt from retention cleanup
+        boolean isPreWarmed = false;
         volatile long totalRows;
         volatile long processedRows;
     }

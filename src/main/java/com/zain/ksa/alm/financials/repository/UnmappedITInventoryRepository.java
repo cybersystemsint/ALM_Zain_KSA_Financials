@@ -1,6 +1,7 @@
 package com.zain.ksa.alm.financials.repository;
 
 import com.zain.ksa.alm.financials.entity.UnmappedITInventory;
+import com.zain.ksa.alm.financials.repository.custom.FilteredStreamRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -21,14 +22,12 @@ import static org.hibernate.jpa.QueryHints.HINT_READONLY;
 
 /**
  * Repository for tb_unmapped_IT_Inventory.
- *
- * <p>See {@link UnmappedActiveInventoryRepository} for streaming design notes
- * and MySQL cursor requirements.</p>
  */
 @Repository
 public interface UnmappedITInventoryRepository
         extends JpaRepository<UnmappedITInventory, Long>,
-                JpaSpecificationExecutor<UnmappedITInventory> {
+                JpaSpecificationExecutor<UnmappedITInventory>,
+                FilteredStreamRepository<UnmappedITInventory> {
 
     boolean existsByHostSerialNumber(String hostSerialNumber);
 
@@ -39,7 +38,7 @@ public interface UnmappedITInventoryRepository
     int deleteByHostSerialNumberIn(@Param("serials") List<String> serials);
 
     /**
-     * Streams all IT unmapped inventory records using a server-side cursor.
+     * Streams all IT unmapped inventory records (unfiltered) using a server-side cursor.
      */
     @QueryHints(value = {
         @QueryHint(name = HINT_FETCH_SIZE, value = "500"),

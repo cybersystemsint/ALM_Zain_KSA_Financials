@@ -6,6 +6,8 @@ import com.zain.ksa.alm.financials.service.ExportJobService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -18,7 +20,8 @@ import java.util.List;
  *   <li><b>ApplicationReadyEvent</b> — on startup so files are ready from day one</li>
  *   <li><b>UnmappedInventoryScheduler</b> — after nightly reconciliation</li>
  *   <li><b>DepreciationScheduler</b> — after monthly depreciation run</li>
- *   <li><b>FarReportService.uploadAndSave()</b> — after any FAR upload completes</li>
+ *   <li><b>FarReportService.processUpload()</b> — after any FAR upload completes</li>
+ *   <li><b>Scheduled cron</b> — daily at 2 AM (configurable)</li>
  * </ul>
  *
  * <p>Pre-warmed jobs use a deterministic ID so the same file is served to all
@@ -49,6 +52,15 @@ public class PreWarmExportJob {
         this.exportJobService = exportJobService;
     }
 
+    /**
+     * Scheduled pre-warm: runs daily at 2 AM server time.
+     * Configurable via {@code app.export.prewarm-cron}.
+     */
+    @Scheduled(cron = "${app.export.prewarm-cron:0 0 2 * * *}")
+    public void scheduledWarmAll() {
+        warmAll();
+    }
+
     /** Pre-warms all configured export types. Called on application startup. */
     public void warmAll() {
         log.info("Pre-warming all static exports ({} targets)", TARGETS.size());
@@ -58,19 +70,25 @@ public class PreWarmExportJob {
     /**
      * Pre-warms a single export type.
      * Invalidates the old file first so users never download stale data.
+     * Runs on the dedicated preWarmTaskExecutor thread pool.
      */
+    @Async("preWarmTaskExecutor")
     public void warmSingle(String exportType, ExportFormat format) {
         String jobId = buildPreWarmJobId(exportType, format);
 
-        exportJobService.invalidateExport(jobId);
+        try {
+            exportJobService.invalidateExport(jobId);
 
-        log.info("Starting pre-warm for jobId={}", jobId);
-        exportJobService.startPreWarmedExport(
-                exportType,
-                new DynamicFilterRequest(),
-                format,
-                jobId
-        );
+            log.info("Starting pre-warm for jobId={}", jobId);
+            exportJobService.startPreWarmedExport(
+                    exportType,
+                    new DynamicFilterRequest(),
+                    format,
+                    jobId
+            );
+        } catch (Exception e) {
+            log.error("[PreWarm] Failed for {}: {}", jobId, e.getMessage(), e);
+        }
     }
 
     /**

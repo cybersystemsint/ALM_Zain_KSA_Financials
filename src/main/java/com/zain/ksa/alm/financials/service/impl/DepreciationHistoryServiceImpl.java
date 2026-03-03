@@ -16,14 +16,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
 import javax.servlet.http.HttpServletResponse;
+
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -79,7 +80,7 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
                 .orElseThrow(() -> new ResourceNotFoundException("DepreciationHistory", "id", id));
     }
 
-    // ── Export ────────────────────────────────────────────────────────────────
+    // ── Export (now uses GenericSpecificationBuilder + FilteredStreamRepository) ──
 
     @Override
     @Transactional(readOnly = true)
@@ -87,17 +88,10 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
                                  HttpServletResponse response) throws Exception {
         log.info("Starting depreciation export, format={}", format);
 
-        Map<String, String> filterBy    = filter.getFilterBy();
-        String              assetId      = getFilterValue(filterBy, "assetId");
-        String              serialNumber = getFilterValue(filterBy, "serialNumber");
-        String              statusFlag   = getFilterValue(filterBy, "statusFlag");
-        String              category     = getFilterValue(filterBy, "category");
-        String              nodeType     = getFilterValue(filterBy, "nodeType");
-        String              mapped       = getFilterValue(filterBy, "mapped");
+        Specification<DepreciationHistory> spec = SPEC_BUILDER.build(filter);
 
-        try (Stream<DepreciationHistory> stream = repository.streamByFilters(
-                assetId, serialNumber, statusFlag, category, nodeType, mapped,
-                filter.getDateFrom(), filter.getDateTo())) {
+        try (Stream<DepreciationHistory> stream =
+                 (spec != null ? repository.streamAll(spec) : repository.streamAll())) {
 
             exportFactory.<DepreciationHistoryDTO>resolve(format)
                     .export(
@@ -135,27 +129,10 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
         return repository.save(entity);
     }
 
-    /**
-     * Batch-saves a list of DepreciationHistory records in one JDBC round-trip
-     * per chunk. Cache is evicted so stale list/single entries are cleared
-     * immediately after the batch completes.
-     *
-     * Requires in application.properties:
-     *   spring.jpa.properties.hibernate.jdbc.batch_size=500
-     *   spring.jpa.properties.hibernate.order_inserts=true
-     */
     @Override
     @CacheEvict(value = {"depreciation:list", "depreciation:single"}, allEntries = true)
     @Transactional
     public List<DepreciationHistory> saveAll(List<DepreciationHistory> entities) {
         return repository.saveAll(entities);
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private String getFilterValue(Map<String, String> filterBy, String key) {
-        if (filterBy == null) return null;
-        String val = filterBy.get(key);
-        return (val != null && !val.isBlank()) ? val : null;
     }
 }

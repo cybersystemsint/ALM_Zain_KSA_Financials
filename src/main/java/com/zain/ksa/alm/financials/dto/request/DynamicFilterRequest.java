@@ -1,8 +1,5 @@
 package com.zain.ksa.alm.financials.dto.request;
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -12,14 +9,12 @@ public class DynamicFilterRequest {
     private String searchQuery = "";
     private Map<String, String> filterBy = new HashMap<>();
 
-    @JsonDeserialize(using = FlexibleLocalDateTimeDeserializer.class)
-    private LocalDateTime dateFrom;
-
-    @JsonDeserialize(using = FlexibleLocalDateTimeDeserializer.class)
-    private LocalDateTime dateTo;
+    private String dateFrom;
+    private String dateTo;
 
     private Boolean isMapped;
     private String siteId = "";
+
 
     public String getColumnName() {
         return columnName;
@@ -45,19 +40,19 @@ public class DynamicFilterRequest {
         this.filterBy = filterBy;
     }
 
-    public LocalDateTime getDateFrom() {
+    public String getDateFrom() {
         return dateFrom;
     }
 
-    public void setDateFrom(LocalDateTime dateFrom) {
+    public void setDateFrom(String dateFrom) {
         this.dateFrom = dateFrom;
     }
 
-    public LocalDateTime getDateTo() {
+    public String getDateTo() {
         return dateTo;
     }
 
-    public void setDateTo(LocalDateTime dateTo) {
+    public void setDateTo(String dateTo) {
         this.dateTo = dateTo;
     }
 

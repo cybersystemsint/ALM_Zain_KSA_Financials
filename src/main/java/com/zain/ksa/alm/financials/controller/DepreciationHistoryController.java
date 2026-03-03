@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.concurrent.Executor;
 
 @RestController
+@CrossOrigin(origins = "*", maxAge = 3600)
 @RequestMapping("depreciation-history")
 public class DepreciationHistoryController {
 
@@ -68,25 +69,24 @@ public ResponseEntity<ApiResponse<PagedResponse<DepreciationHistoryDTO>>> getAll
      * Poll:     GET /exports/status/{jobId}
      * Download: GET /exports/download/{jobId}
      */
-    @PostMapping("/export")
-    public ResponseEntity<ApiResponse<Map<String, String>>> export(
-            DynamicFilterRequest filter,
-            @RequestParam(defaultValue = "CSV") ExportFormat format) {
+@PostMapping("/export")
+public ResponseEntity<ApiResponse<Map<String, String>>> export(
+        @RequestBody(required = false) DynamicFilterRequest filter, 
+        @RequestParam(defaultValue = "CSV") ExportFormat format) {
 
-        if (filter == null) filter = new DynamicFilterRequest();
-        String jobId = exportJobService.startExport("depreciation", filter, format);
+    if (filter == null) filter = new DynamicFilterRequest();
+    String jobId = exportJobService.startExport("depreciation", filter, format);
 
-        Map<String, Object> status      = exportJobService.getStatus(jobId);
-        String              statusValue = status != null ? (String) status.get("status") : "RUNNING";
+    Map<String, Object> status      = exportJobService.getStatus(jobId);
+    String              statusValue = status != null ? (String) status.get("status") : "RUNNING";
 
-        return ResponseEntity.ok(ApiResponse.ok(Map.of(
-                "jobId",       jobId,
-                "status",      statusValue,
-                "pollUrl",     "/exports/status/" + jobId,
-                "downloadUrl", "/exports/download/" + jobId
-        )));
-    }
-
+    return ResponseEntity.ok(ApiResponse.ok(Map.of(
+            "jobId",       jobId,
+            "status",      statusValue,
+            "pollUrl",     "/exports/status/" + jobId,
+            "downloadUrl", "/exports/download/" + jobId
+    )));
+}
     // ── Depreciation run trigger ──────────────────────────────────────────────
 
     /**

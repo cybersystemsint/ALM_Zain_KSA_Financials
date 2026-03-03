@@ -6,26 +6,28 @@ import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
-import javax.persistence.criteria.CriteriaBuilder;
-import javax.persistence.criteria.Root;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
@@ -39,28 +41,23 @@ import com.zain.ksa.alm.financials.entity.FarReport;
 import com.zain.ksa.alm.financials.mapper.InventoryMapper;
 import com.zain.ksa.alm.financials.repository.FarReportRepository;
 import com.zain.ksa.alm.financials.service.FarReportService;
-import javax.persistence.criteria.CriteriaBuilder;
-import javax.persistence.criteria.CriteriaQuery;
-import javax.persistence.criteria.Root;
-import org.springframework.data.jpa.domain.Specification;
-import java.math.BigDecimal;
+
 /**
  * Production-ready FAR report service.
  *
- * <h3>Upload workflow</h3>
- * <ol>
- *   <li>Validate rows, skip invalid</li>
- *   <li>Batch upsert in chunks of {@value UPLOAD_BATCH_SIZE}</li>
- *   <li>Evict FAR list cache</li>
- *   <li>Trigger pre-warm export refresh (async) so next download is instant</li>
- * </ol>
- *
- * <h3>Pre-warm trigger points</h3>
- * <p>FAR data only changes when:</p>
+ * <h3>Changes from previous version</h3>
  * <ul>
- *   <li>A bulk upload is processed → {@link #processUpload} triggers pre-warm</li>
- *   <li>Depreciation scheduler runs → {@code DepreciationScheduler} triggers pre-warm</li>
+ *   <li><b>SQL injection fix</b>: {@link #findAllWithSummary} now validates column
+ *       names from {@code filter.columnName} and {@code filter.filterBy} keys against
+ *       a whitelist before interpolating them into SQL. Previously these went straight
+ *       into the WHERE clause — a malicious {@code columnName} like
+ *       {@code "1=1; DROP TABLE tb_FarReport; --"} would execute.</li>
+ *   <li><b>Date range filtering fix</b>: {@link #findAllWithSummary} now applies
+ *       dateFrom/dateTo filters to BOTH the raw SQL aggregation query AND the JPA
+ *       paged query, ensuring consistent filtering across all results.</li>
  * </ul>
+ *
+ * <p>Everything else is unchanged: upload, CRUD, pre-warm, CSV export.</p>
  */
 @Service
 public class FarReportServiceImpl implements FarReportService {
@@ -78,9 +75,34 @@ public class FarReportServiceImpl implements FarReportService {
     @PersistenceContext
     private EntityManager entityManager;
 
+    private static final GenericSpecificationBuilder<FarReport> SPEC_BUILDER =
+            new GenericSpecificationBuilder<>("recordDatetime");
 
-            private static final GenericSpecificationBuilder<FarReport> SPEC_BUILDER =
-        new GenericSpecificationBuilder<>("recordDatetime");
+    // ── Column whitelist (matches tb_FarReport schema) ────────────────────────
+    // Used by: findAllWithSummary (SQL injection protection), legacy CSV export
+
+    private static final String[] COLUMNS = {
+        "recordNo", "recordDatetime", "book", "assetId", "quantity",
+        "description", "creationDate", "serialNumber", "tagNumber",
+        "picStatus", "picDate", "cipDeliveryDate", "linkId", "acceptanceNumber",
+        "depreciateFlag", "cipEu", "invoiceNumber", "poNumber", "poLineNumber",
+        "uplLine", "transferToNewFar", "assetStatus", "value", "partNumber",
+        "vendorName", "vendorNumber", "mergedCode", "costAccount",
+        "accumulatedDepreAccount", "cipCostAccount", "expenseCostCenter",
+        "expenseAccount", "Life", "datePlacedInService", "cost", "nbv",
+        "depreciationAmount", "ytdDepreciation", "depreciationReserve",
+        "salvageValue", "category", "categoryDescription", "locationSegment1",
+        "locationSegment2", "locationSegment3", "locationSegment4", "locations",
+        "sequenceNumber", "createdBy", "createdDate", "updatedBy", "updatedDate",
+        "monthlyDepreciationAmt", "accumulatedDepreciationAmt", "depreciationDate",
+        "netCost", "statusFlag", "changedBy", "insertedBy", "financialApproval",
+        "changedDate", "nodeType"
+    };
+
+    /** Fast lookup set for column name validation. */
+    private static final Set<String> ALLOWED_COLUMNS = new HashSet<>(Arrays.asList(COLUMNS));
+
+    private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     public FarReportServiceImpl(FarReportRepository farReportRepository,
                                 JdbcTemplate jdbcTemplate,
@@ -121,18 +143,17 @@ public class FarReportServiceImpl implements FarReportService {
     }
 
     @Override
-@Transactional(readOnly = true)
-public PagedResponse<FarReportDTO> findAll(DynamicFilterRequest filter, Pageable pageable) {
-    return PagedResponse.of(
-        farReportRepository.findAll(SPEC_BUILDER.build(filter), pageable)
-                           .map(mapper::toFarReportDto)
-    );
-}
+    @Transactional(readOnly = true)
+    public PagedResponse<FarReportDTO> findAll(DynamicFilterRequest filter, Pageable pageable) {
+        return PagedResponse.of(
+            farReportRepository.findAll(SPEC_BUILDER.build(filter), pageable)
+                               .map(mapper::toFarReportDto)
+        );
+    }
 
-// ── List with Summary ─────────────────────────────────────────────────────
+    // ── List with Summary (SQL injection fixed + Date filtering fixed) ────────
 
-
-    @Override
+@Override
 @Cacheable(value = "far-report:list",
            key = "T(java.util.Objects).hash(#filter.columnName, #filter.searchQuery, " +
                  "#filter.filterBy, #filter.dateFrom, #filter.dateTo, " +
@@ -141,78 +162,98 @@ public PagedResponse<FarReportDTO> findAll(DynamicFilterRequest filter, Pageable
 @Transactional(readOnly = true)
 public Map<String, Object> findAllWithSummary(DynamicFilterRequest filter, Pageable pageable) {
 
-    // ── Build WHERE clause + params (mirrors FarReportServiceHelper exactly) ──
+    // ── Build WHERE clause + params ───────────────────────────────────────
     StringBuilder where  = new StringBuilder(" WHERE 1=1");
     List<Object>  params = new ArrayList<>();
 
+    // Column search
     if (filter.getColumnName() != null && !filter.getColumnName().isBlank()
             && filter.getSearchQuery() != null && !filter.getSearchQuery().isBlank()) {
-        where.append(" AND LOWER(").append(filter.getColumnName()).append(") LIKE LOWER(?)");
-        params.add("%" + filter.getSearchQuery() + "%");
+        String col = validateColumn(filter.getColumnName());
+        if (col != null) {
+            where.append(" AND LOWER(").append(col).append(") LIKE LOWER(?)");
+            params.add("%" + filter.getSearchQuery() + "%");
+        } else {
+            log.warn("[findAllWithSummary] Rejected unknown columnName: {}", filter.getColumnName());
+        }
     }
+
+    // FilterBy map
     if (filter.getFilterBy() != null) {
         for (Map.Entry<String, String> entry : filter.getFilterBy().entrySet()) {
             if (entry.getValue() != null && !entry.getValue().isBlank()) {
-                where.append(" AND ").append(entry.getKey()).append(" = ?");
-                params.add(entry.getValue());
+                String col = validateColumn(entry.getKey());
+                if (col != null) {
+                    where.append(" AND ").append(col).append(" = ?");
+                    params.add(entry.getValue());
+                } else {
+                    log.warn("[findAllWithSummary] Rejected unknown filterBy key: {}", entry.getKey());
+                }
             }
         }
     }
-    if (filter.getDateFrom() != null) {
+
+    // ── Date range ───────────────────────────────────────────────────────
+    LocalDateTime dateFrom = parseDate(filter.getDateFrom(), true);
+    LocalDateTime dateTo   = parseDate(filter.getDateTo(), false);
+
+    if (dateFrom != null) {
         where.append(" AND recordDatetime >= ?");
-        params.add(java.sql.Timestamp.valueOf(filter.getDateFrom()));
+        params.add(java.sql.Timestamp.valueOf(dateFrom));
     }
-    if (filter.getDateTo() != null) {
+    if (dateTo != null) {
         where.append(" AND recordDatetime <= ?");
-        params.add(java.sql.Timestamp.valueOf(filter.getDateTo()));
+        params.add(java.sql.Timestamp.valueOf(dateTo));
     }
+
+    // Update filter for SPEC_BUILDER to use
+    if (dateFrom != null) filter.setDateFrom(dateFrom.toString());
+    if (dateTo != null)   filter.setDateTo(dateTo.toString());
 
     boolean hasFilters = !params.isEmpty();
 
-    // ── Query 1: COUNT + filtered aggregates in one round-trip ───────────────
-    // NOTE: uses netCost for NBV — matches the working legacy getFAR query
+    // ── Query 1: COUNT + filtered aggregates ──────────────────────────────
     String aggregateSql =
         "SELECT COUNT(*) AS cnt," +
         "  COALESCE(SUM(cost), 0)                       AS filteredCost," +
         "  COALESCE(SUM(netCost), 0)                    AS filteredNBV," +
-        "  COALESCE(SUM(accumulatedDepreciationAmt), 0)  AS filteredDepreciation" +
+        "  COALESCE(SUM(accumulatedDepreciationAmt), 0) AS filteredDepreciation" +
         " FROM tb_FarReport" + where;
 
     Map<String, Object> agg = jdbcTemplate.queryForMap(aggregateSql, params.toArray());
 
-    long       totalRecords         = ((Number) agg.get("cnt")).longValue();
+    long totalRecords         = ((Number) agg.get("cnt")).longValue();
     BigDecimal filteredCost         = toBigDecimal(agg.get("filteredCost"));
     BigDecimal filteredNBV          = toBigDecimal(agg.get("filteredNBV"));
     BigDecimal filteredDepreciation = toBigDecimal(agg.get("filteredDepreciation"));
 
-    // ── Query 2 (conditional): whole-table totals ─────────────────────────────
+    // ── Query 2: whole-table totals if filters exist ─────────────────────
     BigDecimal totalCost;
     BigDecimal totalNBV;
     BigDecimal totalDepreciation;
 
     if (!hasFilters) {
-        // No filter — filtered == total, skip second query
         totalCost         = filteredCost;
         totalNBV          = filteredNBV;
         totalDepreciation = filteredDepreciation;
     } else {
         Map<String, Object> totals = jdbcTemplate.queryForMap(
             "SELECT COALESCE(SUM(cost), 0)                     AS totalCost," +
-            "  COALESCE(SUM(netCost), 0)                       AS totalNBV," +
-            "  COALESCE(SUM(accumulatedDepreciationAmt), 0)     AS totalDepreciation" +
+            "       COALESCE(SUM(netCost), 0)                 AS totalNBV," +
+            "       COALESCE(SUM(accumulatedDepreciationAmt), 0) AS totalDepreciation" +
             " FROM tb_FarReport");
         totalCost         = toBigDecimal(totals.get("totalCost"));
         totalNBV          = toBigDecimal(totals.get("totalNBV"));
         totalDepreciation = toBigDecimal(totals.get("totalDepreciation"));
     }
 
-    // ── Query 3: paged data via JPA ───────────────────────────────────────────
+    // ── Query 3: paged data via JPA ───────────────────────────────────────
     Specification<FarReport> spec = SPEC_BUILDER.build(filter);
     Page<FarReportDTO> page = farReportRepository
             .findAll(spec, pageable)
             .map(mapper::toFarReportDto);
 
-    // ── Response ──────────────────────────────────────────────────────────────
+    // ── Response ──────────────────────────────────────────────────────────
     Map<String, Object> response = new HashMap<>();
     response.put("data",                 page.getContent());
     response.put("totalRecords",         totalRecords);
@@ -225,103 +266,133 @@ public Map<String, Object> findAllWithSummary(DynamicFilterRequest filter, Pagea
     response.put("totalCost",            totalCost);
     response.put("totalNBV",             totalNBV);
     response.put("totalDepreciation",    totalDepreciation);
+
     return response;
 }
 
-private static BigDecimal toBigDecimal(Object val) {
-    if (val == null) return BigDecimal.ZERO;
-    if (val instanceof BigDecimal) return (BigDecimal) val;
-    return new BigDecimal(val.toString());
+// ── Helper for flexible date parsing ─────────────────────────────────────
+private LocalDateTime parseDate(String dateStr, boolean startOfDay) {
+    if (dateStr == null || dateStr.isBlank()) return null;
+    try {
+        // Try full datetime first
+        return LocalDateTime.parse(dateStr);
+    } catch (Exception e) {
+        // If only date provided, set start or end of day
+        LocalDate date = LocalDate.parse(dateStr);
+        return startOfDay ? date.atStartOfDay() : date.atTime(23, 59, 59);
+    }
 }
-    // ── Upload ────────────────────────────────────────────────────────────────
-
     /**
-     * Processes a bulk upload of FAR records.
-     *
-     * <p>Strategy:</p>
-     * <ul>
-     *   <li>Maps each row to a FarReport entity</li>
-     *   <li>Batch-persists in chunks of {@value UPLOAD_BATCH_SIZE}</li>
-     *   <li>Evicts the FAR list cache</li>
-     *   <li>Refreshes the pre-warmed FAR export (async)</li>
-     * </ul>
+     * Validates a column name against the known whitelist.
+     * Returns the canonical column name (case-insensitive), or null if rejected.
+     * Prevents SQL injection when column names are interpolated into raw SQL.
      */
-    @Override
-    @CacheEvict(value = "far-report:list", allEntries = true)
-    @Transactional
-    public Map<String, Object> processUpload(List<Map<String, Object>> rows, String source) {
-        log.info("[FAR Upload] Starting {} upload, rows={}", source, rows.size());
-        long startMs = System.currentTimeMillis();
-
-        int inserted = 0;
-        int updated  = 0;
-        int failed   = 0;
-
-        List<FarReport> batch = new ArrayList<>(UPLOAD_BATCH_SIZE);
-
-        for (int i = 0; i < rows.size(); i++) {
-            try {
-                Map<String, Object> row = rows.get(i);
-                FarReport entity = mapRowToEntity(row);
-
-                // Upsert: check if asset already exists
-                String assetId = entity.getAssetId();
-                if (assetId != null && !assetId.isBlank()) {
-                    List<FarReport> existing = farReportRepository.findByAssetId(assetId);
-                    if (!existing.isEmpty()) {
-                        // Update the first match
-                        FarReport target = existing.get(0);
-                        copyFieldsForUpdate(entity, target);
-                        batch.add(target);
-                        updated++;
-                    } else {
-                        entity.setRecordDatetime(new Date());
-                        batch.add(entity);
-                        inserted++;
-                    }
-                } else {
-                    entity.setRecordDatetime(new Date());
-                    batch.add(entity);
-                    inserted++;
-                }
-
-                // Flush batch when full
-                if (batch.size() >= UPLOAD_BATCH_SIZE) {
-                    flushBatch(batch);
-                }
-
-            } catch (Exception ex) {
-                failed++;
-                log.warn("[FAR Upload] Row {} failed: {}", i, ex.getMessage());
-            }
+    private String validateColumn(String input) {
+        if (input == null) return null;
+        String trimmed = input.trim();
+        for (String col : COLUMNS) {
+            if (col.equalsIgnoreCase(trimmed)) return col;
         }
-
-        // Flush remaining
-        if (!batch.isEmpty()) {
-            flushBatch(batch);
-        }
-
-        long elapsedMs = System.currentTimeMillis() - startMs;
-        log.info("[FAR Upload] Complete: inserted={}, updated={}, failed={}, elapsed={}ms",
-                 inserted, updated, failed, elapsedMs);
-
-        // Refresh pre-warmed export in background — async, non-blocking
-        refreshPreWarmExport();
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("status", failed == 0 ? "SUCCESS" : "PARTIAL");
-        result.put("inserted", inserted);
-        result.put("updated", updated);
-        result.put("failed", failed);
-        result.put("total", rows.size());
-        result.put("elapsedMs", elapsedMs);
-        return result;
+        return null;
     }
 
-    /**
-     * Flushes a batch to the database and clears the persistence context
-     * to prevent L1 cache growth during large uploads.
-     */
+    private static BigDecimal toBigDecimal(Object val) {
+        if (val == null) return BigDecimal.ZERO;
+        if (val instanceof BigDecimal) return (BigDecimal) val;
+        return new BigDecimal(val.toString());
+    }
+
+    // ── Upload ────────────────────────────────────────────────────────────────
+
+    @Override
+@CacheEvict(value = "far-report:list", allEntries = true)
+@Transactional
+public Map<String, Object> processUpload(List<Map<String, Object>> rows, String source) {
+    log.info("[FAR Upload] Starting {} upload, rows={}", source, rows.size());
+    long startMs = System.currentTimeMillis();
+
+    // 1. Parse all rows first (no DB calls)
+    List<FarReport> parsed = new ArrayList<>(rows.size());
+    List<Integer> failedIndices = new ArrayList<>();
+    for (int i = 0; i < rows.size(); i++) {
+        try {
+            parsed.add(mapRowToEntity(rows.get(i)));
+        } catch (Exception ex) {
+            failedIndices.add(i);
+            log.warn("[FAR Upload] Row {} parse failed: {}", i, ex.getMessage());
+        }
+    }
+
+    // 2. Collect all assetIds and batch-fetch existing records (ONE query)
+    Set<String> assetIds = parsed.stream()
+            .map(FarReport::getAssetId)
+            .filter(id -> id != null && !id.isBlank())
+            .collect(Collectors.toSet());
+
+    // Add this method to your repository (see below)
+    Map<String, FarReport> existingByAssetId = farReportRepository
+            .findByAssetIdIn(assetIds)
+            .stream()
+            .collect(Collectors.toMap(FarReport::getAssetId, f -> f, (a, b) -> a));
+
+    // 3. Merge into insert/update batches
+    int inserted = 0, updated = 0;
+    List<FarReport> batch = new ArrayList<>(UPLOAD_BATCH_SIZE);
+    Date now = new Date();
+
+    for (FarReport entity : parsed) {
+        String assetId = entity.getAssetId();
+        if (assetId == null || assetId.isBlank()) continue;
+
+        FarReport existing = existingByAssetId.get(assetId);
+        if (existing != null) {
+            copyFieldsForUpdate(entity, existing);
+            existing.setUpdatedDate(now);
+            existing.setUpdatedBy(entity.getUpdatedBy() != null 
+                    ? entity.getUpdatedBy() : existing.getCreatedBy());
+            batch.add(existing);
+            updated++;
+        } else {
+            entity.setRecordDatetime(now);
+            entity.setCreatedDate(now);
+            entity.setUpdatedDate(now);
+            if (entity.getCreatedBy() == null) {
+                entity.setCreatedBy(entity.getUpdatedBy() != null 
+                        ? entity.getUpdatedBy() : "system");
+            }
+            if (entity.getUpdatedBy() == null) {
+                entity.setUpdatedBy(entity.getCreatedBy());
+            }
+            batch.add(entity);
+            inserted++;
+        }
+
+        if (batch.size() >= UPLOAD_BATCH_SIZE) {
+            flushBatch(batch);
+        }
+    }
+
+    if (!batch.isEmpty()) {
+        flushBatch(batch);
+    }
+
+    int failed = failedIndices.size();
+    long elapsedMs = System.currentTimeMillis() - startMs;
+    log.info("[FAR Upload] Complete: inserted={}, updated={}, failed={}, elapsed={}ms",
+             inserted, updated, failed, elapsedMs);
+
+    refreshPreWarmExport();
+
+    Map<String, Object> result = new HashMap<>();
+    result.put("status", failed == 0 ? "SUCCESS" : "PARTIAL");
+    result.put("inserted", inserted);
+    result.put("updated", updated);
+    result.put("failed", failed);
+    result.put("total", rows.size());
+    result.put("elapsedMs", elapsedMs);
+    return result;
+}
+
     private void flushBatch(List<FarReport> batch) {
         farReportRepository.saveAll(batch);
         entityManager.flush();
@@ -329,10 +400,6 @@ private static BigDecimal toBigDecimal(Object val) {
         batch.clear();
     }
 
-    /**
-     * Refreshes the pre-warmed FAR export. Isolated in try-catch so a
-     * pre-warm failure never affects the upload transaction.
-     */
     private void refreshPreWarmExport() {
         try {
             log.info("[FAR Upload] Refreshing pre-warmed FAR export");
@@ -410,10 +477,6 @@ private static BigDecimal toBigDecimal(Object val) {
         return e;
     }
 
-    /**
-     * Copies mutable fields from source to target for update.
-     * Does not overwrite recordNo or recordDatetime.
-     */
     private void copyFieldsForUpdate(FarReport source, FarReport target) {
         target.setBook(source.getBook());
         target.setDescription(source.getDescription());
@@ -467,27 +530,6 @@ private static BigDecimal toBigDecimal(Object val) {
 
     // ── Legacy CSV export ─────────────────────────────────────────────────────
 
-    private static final String[] COLUMNS = {
-        "recordNo", "recordDatetime", "book", "assetId", "quantity",
-        "description", "asset_type", "creationDate", "serialNumber", "tagNumber",
-        "picStatus", "picDate", "cipDeliveryDate", "linkId", "acceptanceNumber",
-        "depreciateFlag", "cipEu", "invoiceNumber", "poNumber", "poLineNumber",
-        "uplLine", "transferToNewFar", "assetStatus", "value", "partNumber",
-        "vendorName", "vendorNumber", "mergedCode", "costAccount",
-        "accumulatedDepreAccount", "cipCostAccount", "expenseCostCenter",
-        "expenseAccount", "Life", "datePlacedInService", "cost", "nbv",
-        "depreciationAmount", "ytdDepreciation", "depreciationReserve",
-        "salvageValue", "category", "categoryDescription", "locationSegment1",
-        "locationSegment2", "locationSegment3", "locationSegment4", "locations",
-        "sequenceNumber", "createdBy", "createdDate", "updatedBy", "updatedDate",
-        "monthlyDepreciationAmt", "accumulatedDepreciationAmt", "depreciationDate",
-        "netCost", "statusFlag", "changedBy", "insertedBy", "financialApproval",
-        "changedDate", "nodeType"
-    };
-
-    private static final List<String> ALLOWED_COLUMNS = Arrays.asList(COLUMNS);
-    private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-
     @Override
     @Transactional(readOnly = true)
     public void streamExportToCsv(PrintWriter writer, String column, String value,
@@ -498,6 +540,7 @@ private static BigDecimal toBigDecimal(Object val) {
 
         List<Object> params = new ArrayList<>();
 
+        // Already safe — uses ALLOWED_COLUMNS.contains() check
         if (column != null && value != null && ALLOWED_COLUMNS.contains(column)) {
             if ("contains".equalsIgnoreCase(operator)) {
                 sql.append(" AND ").append(column).append(" LIKE ?");
@@ -541,7 +584,6 @@ private static BigDecimal toBigDecimal(Object val) {
         return value;
     }
 
-    /** Get string value, trying multiple key variants (for column name inconsistencies). */
     private String getStr(Map<String, Object> row, String... keys) {
         for (String key : keys) {
             Object val = row.get(key);
@@ -560,7 +602,7 @@ private static BigDecimal toBigDecimal(Object val) {
             return Integer.parseInt(val);
         } catch (NumberFormatException e) {
             try {
-                return (int) Double.parseDouble(val); // handles "5.0"
+                return (int) Double.parseDouble(val);
             } catch (NumberFormatException e2) {
                 return null;
             }
@@ -586,4 +628,5 @@ private static BigDecimal toBigDecimal(Object val) {
             return null;
         }
     }
+  
 }

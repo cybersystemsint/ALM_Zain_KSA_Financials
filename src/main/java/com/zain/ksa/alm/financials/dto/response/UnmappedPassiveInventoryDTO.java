@@ -3,11 +3,15 @@ package com.zain.ksa.alm.financials.dto.response;
 
 import lombok.Builder;
 import lombok.Value;
+import lombok.With;
+
 import java.time.LocalDateTime;
 
 @Value
 @Builder
+@With 
 public class UnmappedPassiveInventoryDTO {
+    Long sequenceNo; 
     Long id;
     LocalDateTime recordDateTime;
     String inventoryId;

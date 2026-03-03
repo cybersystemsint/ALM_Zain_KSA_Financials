@@ -310,9 +310,9 @@ Follow the same poll + download flow as Section 1.3. If `status` in the trigger 
 ### 2.5 Reconciliation — Manual Triggers (Async)
 
 > After each reconciliation completes, its pre-warmed export is automatically refreshed:
-> - `reconcile/active` → refreshes `prewarm-unmapped_active-EXCEL`
-> - `reconcile/passive` → refreshes `prewarm-unmapped_passive-EXCEL`
-> - `reconcile/it` → refreshes `prewarm-unmapped_it-EXCEL`
+> - `reconcile/active` → refreshes `unmapped_active-EXCEL`
+> - `reconcile/passive` → refreshes `unmapped_passive-EXCEL`
+> - `reconcile/it` → refreshes `unmapped_it-EXCEL`
 > - `reconcile/all` → refreshes all three
 
 ```
@@ -843,9 +843,9 @@ POST /unmapped-inventory/reconcile/active  (or passive / it / all)
 Poll: GET /unmapped-inventory/reconcile/status
   ↓
 When reconciliation completes:
-  reconcile/active  → prewarm-unmapped_active-EXCEL refreshed
-  reconcile/passive → prewarm-unmapped_passive-EXCEL refreshed
-  reconcile/it      → prewarm-unmapped_it-EXCEL refreshed
+  reconcile/active  → unmapped_active-EXCEL refreshed
+  reconcile/passive → unmapped_passive-EXCEL refreshed
+  reconcile/it      → unmapped_it-EXCEL refreshed
   reconcile/all     → all three refreshed
 ```
 
@@ -902,11 +902,11 @@ These IDs are deterministic and returned automatically in the trigger response. 
 
 | Job ID | Dataset | Refreshed after |
 |--------|---------|-----------------|
-| `prewarm-depreciation-EXCEL` | Depreciation History | Every depreciation run (scheduled + manual) |
-| `prewarm-far_report-EXCEL` | FAR Report | Every FAR upload + every depreciation run |
-| `prewarm-unmapped_active-EXCEL` | Unmapped Active | Active or full reconciliation |
-| `prewarm-unmapped_passive-EXCEL` | Unmapped Passive | Passive or full reconciliation |
-| `prewarm-unmapped_it-EXCEL` | Unmapped IT | IT or full reconciliation |
+| `depreciation-EXCEL` | Depreciation History | Every depreciation run (scheduled + manual) |
+| `far_report-EXCEL` | FAR Report | Every FAR upload + every depreciation run |
+| `unmapped_active-EXCEL` | Unmapped Active | Active or full reconciliation |
+| `unmapped_passive-EXCEL` | Unmapped Passive | Passive or full reconciliation |
+| `unmapped_it-EXCEL` | Unmapped IT | IT or full reconciliation |
 
 > **Startup warm-up:** when the application starts, all five pre-warmed exports are generated automatically in the background via `@EventListener(ApplicationReadyEvent.class)`. If a user requests an unfiltered export during this window, they will receive `status: RUNNING` and poll as normal — the file will be ready within a few minutes.
 
