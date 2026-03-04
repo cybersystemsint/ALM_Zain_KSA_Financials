@@ -71,4 +71,22 @@ public class DynamicFilterRequest {
     public void setSiteId(String siteId) {
         this.siteId = siteId;
     }
+
+    public boolean isEmpty() {
+    // No column search
+    boolean noSearch = (this.columnName == null || this.columnName.isBlank())
+                    && (this.searchQuery == null || this.searchQuery.isBlank());
+    
+    // No filter-by conditions
+    boolean noFilters = this.filterBy == null 
+                     || this.filterBy.isEmpty()
+                     || this.filterBy.values().stream()
+                           .allMatch(v -> v == null || v.isBlank());
+    
+    // No date range
+    boolean noDates = (this.dateFrom == null || this.dateFrom.isBlank())
+                   && (this.dateTo == null || this.dateTo.isBlank());
+    
+    return noSearch && noFilters && noDates;
+}
 }

@@ -25,6 +25,7 @@ import com.zain.ksa.alm.financials.scheduler.UnmappedInventoryScheduler;
 import com.zain.ksa.alm.financials.service.UnmappedInventoryService;
 import com.zain.ksa.alm.financials.service.export.ExportStrategyFactory;
 
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
@@ -71,15 +72,29 @@ public class UnmappedInventoryServiceImpl implements UnmappedInventoryService {
 
     // ── Fetch ─────────────────────────────────────────────────────────────────
 
+    /**
+     * FIX: Cache key now explicitly handles null values using Objects.hash().
+     * This ensures:
+     *   - Null filters always hash to the same value (cache hit on empty filter)
+     *   - No "null" string pollution in cache keys
+     *   - Consistent behavior across filter/no-filter transitions
+     * 
+     * Also added condition to only cache if filter is empty (no searches),
+     * since filtered results are low-hit-rate and pollute cache.
+     */
     @Override
-    @Cacheable(value = "unmapped-active:list",
-               key = "T(String).valueOf(#filter.siteId) + ':' + "
-                   + "T(String).valueOf(#filter.columnName) + ':' + "
-                   + "T(String).valueOf(#filter.searchQuery) + ':' + "
-                   + "#pageable.pageNumber + ':' + #pageable.pageSize")
+    @Cacheable(
+        value = "unmapped-active:list",
+        key = "T(java.util.Objects).hash(#filter.siteId, #filter.columnName, #filter.searchQuery) " +
+              "+ ':' + #pageable.pageNumber + ':' + #pageable.pageSize",
+        condition = "#filter.isEmpty()"  // Only cache when no filters applied
+    )
     @Transactional(readOnly = true)
     public PagedResponse<UnmappedActiveInventoryDTO> findAllActive(
             DynamicFilterRequest filter, Pageable pageable) {
+
+        log.debug("Fetching active inventory: filter={}, page={}/{}", 
+                  filter, pageable.getPageNumber(), pageable.getPageSize());
 
         long startSeq = (long) pageable.getPageNumber() * pageable.getPageSize();
         AtomicLong sequence = new AtomicLong(startSeq);
@@ -91,15 +106,23 @@ public class UnmappedInventoryServiceImpl implements UnmappedInventoryService {
         );
     }
 
+    /**
+     * FIX: Same as findAllActive — Objects.hash() for null-safe keys
+     * and condition to only cache empty filters.
+     */
     @Override
-    @Cacheable(value = "unmapped-passive:list",
-               key = "T(String).valueOf(#filter.siteId) + ':' + "
-                   + "T(String).valueOf(#filter.columnName) + ':' + "
-                   + "T(String).valueOf(#filter.searchQuery) + ':' + "
-                   + "#pageable.pageNumber + ':' + #pageable.pageSize")
+    @Cacheable(
+        value = "unmapped-passive:list",
+        key = "T(java.util.Objects).hash(#filter.siteId, #filter.columnName, #filter.searchQuery) " +
+              "+ ':' + #pageable.pageNumber + ':' + #pageable.pageSize",
+        condition = "#filter.isEmpty()"
+    )
     @Transactional(readOnly = true)
     public PagedResponse<UnmappedPassiveInventoryDTO> findAllPassive(
             DynamicFilterRequest filter, Pageable pageable) {
+
+        log.debug("Fetching passive inventory: filter={}, page={}/{}", 
+                  filter, pageable.getPageNumber(), pageable.getPageSize());
 
         long startSeq = (long) pageable.getPageNumber() * pageable.getPageSize();
         AtomicLong sequence = new AtomicLong(startSeq);
@@ -111,15 +134,23 @@ public class UnmappedInventoryServiceImpl implements UnmappedInventoryService {
         );
     }
 
+    /**
+     * FIX: Same as findAllActive — Objects.hash() for null-safe keys
+     * and condition to only cache empty filters.
+     */
     @Override
-    @Cacheable(value = "unmapped-it:list",
-               key = "T(String).valueOf(#filter.siteId) + ':' + "
-                   + "T(String).valueOf(#filter.columnName) + ':' + "
-                   + "T(String).valueOf(#filter.searchQuery) + ':' + "
-                   + "#pageable.pageNumber + ':' + #pageable.pageSize")
+    @Cacheable(
+        value = "unmapped-it:list",
+        key = "T(java.util.Objects).hash(#filter.siteId, #filter.columnName, #filter.searchQuery) " +
+              "+ ':' + #pageable.pageNumber + ':' + #pageable.pageSize",
+        condition = "#filter.isEmpty()"
+    )
     @Transactional(readOnly = true)
     public PagedResponse<UnmappedITInventoryDTO> findAllIT(
             DynamicFilterRequest filter, Pageable pageable) {
+
+        log.debug("Fetching IT inventory: filter={}, page={}/{}", 
+                  filter, pageable.getPageNumber(), pageable.getPageSize());
 
         long startSeq = (long) pageable.getPageNumber() * pageable.getPageSize();
         AtomicLong sequence = new AtomicLong(startSeq);
