@@ -24,9 +24,6 @@ import java.util.Map;
 
 /**
  * Export job status polling and file download controller.
- * 
- * KEY FIX: Uses InputStreamResource with streaming for large files.
- * Handles connection interruptions gracefully.
  */
 @RestController
 @CrossOrigin(origins = "*", maxAge = 3600)

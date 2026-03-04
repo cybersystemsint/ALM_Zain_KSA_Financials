@@ -19,8 +19,6 @@
 // import com.zain.ksa.alm.financials.service.AssetMaintenanceService;
 // import com.zain.ksa.alm.financials.service.AssetReportService;
 // import com.zain.ksa.alm.financials.service.AssetTransferManagementService;
-// import com.zain.ksa.alm.financials.util.FarReportExcelExporter;
-// import com.zain.ksa.alm.financials.util.FarReportServiceHelper;
 // import com.zain.ksa.alm.financials.service.LicenseManagementService;
 
 // import net.minidev.json.JSONArray;
@@ -38,23 +36,17 @@
 // 	private final AssetMaintenanceService assetMaintenanceService;
 // 	private final AssetReportService assetReportService;
 // 	private final LicenseManagementService licenseManagementService;
-// 	private final FarReportExcelExporter farReportExcelExporter;
-//     private final FarReportServiceHelper farReportServiceHelper;
 
 // 	@Autowired
 // 	public AlmAssetManagementController(AssetTransferManagementService assetTransferManagementService,
 // 			AssetAllocationManagementService assetAllocationManagementService,
 // 			AssetMaintenanceService assetMaintenanceService, AssetReportService assetReportService,
-// 			LicenseManagementService licenseManagementService,
-// 			FarReportExcelExporter farReportExcelExporter,
-// 			FarReportServiceHelper farReportServiceHelper) {
+// 			LicenseManagementService licenseManagementService) {
 // 		this.assetTransferManagementService = assetTransferManagementService;
 // 		this.assetAllocationManagementService = assetAllocationManagementService;
 // 		this.assetMaintenanceService = assetMaintenanceService;
 // 		this.assetReportService = assetReportService;
 // 		this.licenseManagementService = licenseManagementService;
-// 		this.farReportExcelExporter = farReportExcelExporter;
-// 		this.farReportServiceHelper = farReportServiceHelper;
 // 	}
 
 // 	@PostMapping(value = "uploadLicenses", produces = "application/json")
@@ -69,44 +61,6 @@
 // 		return licenseManagementService.getAllLicenses();
 // 	}
 
-// 	// @PostMapping(value = "getFAR", produces = "application/json")
-// 	// public Map<String, Object> getFARKSA(@RequestBody JSONObject assetRequest) {
-// 	// 	LOGGER.info("Received request: getFAR");
-// 	// 	return financialReportManagementService.getFARReport(assetRequest);
-// 	// }
-
-// @PostMapping(value = "/far-report/getFAR", produces = "application/json")
-// public Map<String, Object> getFARKSA(@RequestBody JSONObject assetRequest) {
-//     LOGGER.info("Received request: getFAR");
-
-//     String assetId     = assetRequest.containsKey("assetId")     ? assetRequest.getAsString("assetId")     : "";
-//     String columnName  = assetRequest.containsKey("columnName")  ? assetRequest.getAsString("columnName")  : "";
-//     String searchQuery = assetRequest.containsKey("searchQuery") ? assetRequest.getAsString("searchQuery") : "";
-//     String dateFrom    = assetRequest.containsKey("dateFrom")    ? assetRequest.getAsString("dateFrom")    : "";
-//     String dateTo      = assetRequest.containsKey("dateTo")      ? assetRequest.getAsString("dateTo")      : "";
-//     int page = Math.max(assetRequest.containsKey("page") ? assetRequest.getAsNumber("page").intValue() : 0, 0);
-//     int size = Math.min(Math.max(assetRequest.containsKey("size") ? assetRequest.getAsNumber("size").intValue() : 100, 1), 500);
-
-//     return farReportServiceHelper.fetchFarReport(assetId, columnName, searchQuery, dateFrom, dateTo, page, size);
-// }
-
-// // 	@RequestMapping({ "uploadFAR" })
-// // 	public JSONObject uploadFAR(@RequestBody String req, HttpServletResponse httpResponse) {
-// // 		LOGGER.info("Received request: uploadFAR");
-// // 		return financialReportManagementService.uploadFAR(req);
-// // 	}
-
-// 	// @RequestMapping({ "uploadFR" })
-// 	// public JSONObject uploadFR(@RequestBody String req, HttpServletResponse httpResponse) {
-// 	// 	LOGGER.info("Received request: uploadFR");
-// 	// 	return financialReportManagementService.uploadFinancialReport(req);
-// 	// }
-
-// 	// @RequestMapping({ "getFinancialReport" })
-// 	// public JSONArray getFinancialReport(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
-// 	// 	LOGGER.info("Received request: getFinancialReport");
-// 	// 	return financialReportManagementService.getFinancialReport(assetRequest);
-// 	// }
 
 // 	@RequestMapping({ "assetTransfer" })
 // 	public JSONObject assetTransfer(@RequestBody JSONObject assetRequest, HttpServletResponse httpResponse) {
@@ -188,9 +142,4 @@
 // 		return assetMaintenanceService.disposeAsset(assetRequest);
 // 	}
 
-// 	// @GetMapping("/exportFarReport")
-// 	// public void exportFarReport(HttpServletResponse httpResponse) throws IOException {
-// 	// 	LOGGER.info("Received request: exportFarReport");
-// 	// 	farReportExcelExporter.exportFarReportToResponse(httpResponse);
-// 	// }
 // }

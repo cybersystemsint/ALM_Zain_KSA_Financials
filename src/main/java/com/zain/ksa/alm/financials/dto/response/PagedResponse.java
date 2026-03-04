@@ -47,13 +47,7 @@ public class PagedResponse<T> {
     /** Whether this is the last page. */
     private boolean last;
 
-    /**
-     * Convert Spring Data Page to PagedResponse.
-     *
-     * @param <T> Generic type of page content
-     * @param page Spring Data Page object
-     * @return PagedResponse with equivalent data
-     */
+
     public static <T> PagedResponse<T> of(Page<T> page) {
         return PagedResponse.<T>builder()
                 .content(page.getContent())
@@ -65,17 +59,6 @@ public class PagedResponse<T> {
                 .build();
     }
 
-    /**
-     * Convert Spring Data Page with content transformation.
-     *
-     * <p>Useful when you need to map page contents (e.g., entity → DTO).</p>
-     *
-     * @param <T> target generic type
-     * @param <U> source generic type (from page)
-     * @param page Spring Data Page with source type
-     * @param mapper function to transform each element
-     * @return PagedResponse with transformed content
-     */
     public static <T, U> PagedResponse<T> of(Page<U> page, java.util.function.Function<U, T> mapper) {
         return PagedResponse.<T>builder()
                 .content(page.getContent().stream().map(mapper).toList())

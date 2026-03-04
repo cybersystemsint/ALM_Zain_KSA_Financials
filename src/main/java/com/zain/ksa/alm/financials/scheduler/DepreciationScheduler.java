@@ -101,7 +101,8 @@ public class DepreciationScheduler {
 
     // ── Scheduled entry point ────────────────────────────────────────────────
 
-    @Scheduled(cron = "0 0 0 L * ?", zone = "Africa/Nairobi")
+   @Scheduled(
+    cron = "${app.scheduler.monthly-job-cron:0 0 0 L * ?}", zone = "Asia/Riyadh")
     public void processDepreciation() {
         processDepreciation(true);
     }

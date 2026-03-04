@@ -17,13 +17,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Manages export job lifecycle: creation, status tracking, file cleanup.
- *
- * <h3>Changes from previous version</h3>
- * <p>None to the public API or job lifecycle. The only internal change is that
- * {@link #runExport} now calls {@link ExportExecutor#execute} which manages its
- * own bounded thread pool and semaphore, instead of relying on Spring's
- * {@code @Async("exportTaskExecutor")}. This gives tighter control over
- * concurrency, queue depth, and backpressure.</p>
  */
 @Service
 public class ExportJobServiceImpl implements ExportJobService {
@@ -220,15 +213,17 @@ public class ExportJobServiceImpl implements ExportJobService {
                 : "text/csv;charset=UTF-8";
     }
 
-    // ── Cleanup — only on-demand jobs ─────────────────────────────────────────
+    // ── Cleanup — tracked jobs + orphaned files ───────────────────────────────
 
     @Override
     @Scheduled(fixedRate = 3600000) // every hour
     public void cleanupOldExports() {
         LocalDateTime cutoff = LocalDateTime.now().minusHours(retentionHours);
+        
+        // First pass: clean tracked on-demand jobs older than retention period
         jobs.entrySet().removeIf(entry -> {
             JobInfo job = entry.getValue();
-            if (job.isPreWarmed) return false;
+            if (job.isPreWarmed) return false;  // Skip pre-warmed jobs
 
             if (job.startedAt != null && job.startedAt.isBefore(cutoff)) {
                 if (job.filePath != null) {
@@ -238,10 +233,54 @@ public class ExportJobServiceImpl implements ExportJobService {
                         log.info("Cleaned up on-demand export: {}", job.filePath);
                     }
                 }
-                return true;
+                return true;  // Remove from map
             }
             return false;
         });
+        
+        // Second pass: clean orphaned files (not in job map)
+        // This handles cases where jobs were lost due to server restart or memory issues
+        cleanupOrphanedFiles(cutoff);
+    }
+    
+    /**
+     * Removes export files older than cutoff that aren't tracked in the job map.
+     * Prevents orphaned files from accumulating on disk when job metadata is lost.
+     */
+    private void cleanupOrphanedFiles(LocalDateTime cutoff) {
+        File dir = new File(exportDir);
+        if (!dir.isDirectory()) return;
+        
+        // List all xlsx and csv files, excluding pre-warm files
+        File[] files = dir.listFiles((d, name) -> 
+            (name.endsWith(".xlsx") || name.endsWith(".csv")) 
+            && !name.contains("prewarm")
+        );
+        
+        if (files == null) return;
+        
+        for (File file : files) {
+            // Extract jobId by removing file extension
+            String fileName = file.getName();
+            String jobId = fileName.substring(0, fileName.lastIndexOf('.'));
+            
+            // If file is not tracked in jobs map, check if it's old enough to delete
+            if (!jobs.containsKey(jobId)) {
+                long lastModified = file.lastModified();
+                LocalDateTime fileTime = LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(lastModified),
+                    java.time.ZoneId.systemDefault()
+                );
+                
+                if (fileTime.isBefore(cutoff)) {
+                    if (file.delete()) {
+                        log.info("Cleaned up orphaned export file: {}", file.getAbsolutePath());
+                    } else {
+                        log.warn("Failed to delete orphaned export file: {}", file.getAbsolutePath());
+                    }
+                }
+            }
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

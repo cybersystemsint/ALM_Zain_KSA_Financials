@@ -10,20 +10,6 @@ import java.util.Date;
 
 /**
  * MapStruct mapper.
- *
- * KEY FIX — java.sql.Date.toInstant() UnsupportedOperationException:
- * ──────────────────────────────────────────────────────────────────
- * When Hibernate reads a DATE column it returns java.sql.Date, which is
- * a subclass of java.util.Date. MapStruct's default Date→LocalDate
- * conversion calls date.toInstant() — but java.sql.Date.toInstant()
- * deliberately throws UnsupportedOperationException (JDK bug/design flaw).
- *
- * Safe conversion: cast to java.sql.Date first and call .toLocalDate()
- * directly, which bypasses toInstant() entirely.
- * If it's NOT a sql.Date, fall back to the Instant path.
- *
- * The @Named("dateToLocalDate") converter is applied wherever
- * Node.manufacturingDate (java.util.Date) maps to a LocalDate field.
  */
 @Mapper(
     componentModel = "spring",

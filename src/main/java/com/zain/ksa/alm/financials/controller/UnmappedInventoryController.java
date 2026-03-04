@@ -19,7 +19,7 @@ import java.util.Map;
 /**
  * Unmapped Inventory controller with filtering and async export support.
  * 
- * KEY FIX: Export endpoints now pass filter to ExportJobService.
+ * Export endpoints pass filter to ExportJobService.
  */
 @RestController
 @CrossOrigin(origins = "*", maxAge = 3600)

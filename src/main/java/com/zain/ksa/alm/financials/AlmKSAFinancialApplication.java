@@ -20,7 +20,7 @@ public class AlmKSAFinancialApplication extends SpringBootServletInitializer {
 
 	@PostConstruct
 	public void init() {
-		TimeZone.setDefault(TimeZone.getTimeZone("Africa/Nairobi"));
+		TimeZone.setDefault(TimeZone.getTimeZone("Asia/Riyadh"));
 	}
 
 	@Override

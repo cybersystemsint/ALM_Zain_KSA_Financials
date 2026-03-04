@@ -27,9 +27,6 @@ import java.util.concurrent.Executor;
 /**
  * REST Controller for DepreciationHistory endpoints.
  *
- * <p><b>Normalization (v2):</b> All responses use composite AssetDepreciationDetailDTO
- * which combines depreciation metrics with asset master data via JOIN.</p>
- *
  * <p><b>Endpoints:</b></p>
  * <ul>
  *   <li>POST /depreciation-history/list → Paginated list with filters</li>
@@ -68,13 +65,6 @@ public class DepreciationHistoryController {
 
     /**
      * Fetch paginated depreciation history with optional filters.
-     *
-     * <p><b>Response:</b> Returns AssetDepreciationDetailDTO for each record, which includes:
-     * <ul>
-     *   <li>Depreciation metrics: monthly, accumulated, netCost, period</li>
-     *   <li>Asset master data: description, category, cost, life, etc.</li>
-     *   <li>Audit trail: createdBy, changedBy</li>
-     * </ul>
      *
      * <p><b>Query parameters:</b></p>
      * <ul>

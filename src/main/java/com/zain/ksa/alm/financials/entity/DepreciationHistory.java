@@ -14,8 +14,6 @@ import java.time.LocalDateTime;
 
 /**
  * Lean DepreciationHistory entity storing ONLY computed depreciation metrics.
- *
- * <p><b>Normalization Strategy:</b></p>
  * <ul>
  *   <li>This table records monthly depreciation snapshots: one record per asset per month.</li>
  *   <li>Contains ONLY the columns updated by the depreciation scheduler:
@@ -29,15 +27,6 @@ import java.time.LocalDateTime;
  *   <li>Master asset data (description, serialNumber, category, etc.) remains in FarReport.</li>
  *   <li>At query time, JOIN with FarReport on assetId to fetch asset details on-demand.</li>
  * </ul>
- *
- * <p><b>Benefits:</b></p>
- * <ul>
- *   <li><b>Storage:</b> 10 columns instead of 60+ → 7.5× smaller table</li>
- *   <li><b>Performance:</b> Faster batch inserts (30M field writes vs 180M)</li>
- *   <li><b>Data freshness:</b> Master data always current (no sync lag)</li>
- *   <li><b>Flexibility:</b> Select only needed columns per use case</li>
- * </ul>
- *
  * <p><b>Expected volume:</b> ~3 million rows/month.</p>
  *
  * <p><b>Unique constraint:</b> (assetId, depreciationPeriod) ensures exactly one

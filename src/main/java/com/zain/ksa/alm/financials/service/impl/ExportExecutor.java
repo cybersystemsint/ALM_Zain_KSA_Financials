@@ -27,31 +27,6 @@ import java.util.function.Consumer;
 
 /**
  * OPTIMIZED VERSION: Fast COUNT Blocking + Streaming
- *
- * <p><b>Strategy:</b></p>
- * <ol>
- *   <li>COUNT first (single fast query with WHERE clause)</li>
- *   <li>Call progressCallback with actual totalRows</li>
- *   <li>Start streaming (now with known total count)</li>
- *   <li>Progress updates show accurate percentages</li>
- * </ol>
- *
- * <p><b>Performance Benefits:</b></p>
- * <ul>
- *   <li>COUNT queries are extremely fast (< 100ms for most datasets)</li>
- *   <li>Total rows known immediately (not indeterminate)</li>
- *   <li>Progress bar shows accurate percentages from start</li>
- *   <li>Streaming starts within milliseconds of COUNT</li>
- * </ul>
- *
- * <p><b>Key Fixes:</b></p>
- * <ul>
- *   <li>Depreciation uses SQL JOIN between tb_DepreciationHistory and tb_FarReport</li>
- *   <li>Filters applied to DepreciationHistory columns only</li>
- *   <li>Separate column arrays for DB (JOIN output) vs export headers</li>
- *   <li>Type-aware filtering for strings, dates, integers, numerics</li>
- *   <li>COUNT executes synchronously BEFORE progressCallback is called</li>
- * </ul>
  */
 @Component
 public class ExportExecutor {
@@ -327,7 +302,7 @@ public class ExportExecutor {
     @Value("${app.export.max-threads:3}")
     private int maxThreads;
 
-    @Value("${app.export.dir:${java.io.tmpdir}/alm-exports}")
+    @Value("${app.export.dir:${java.io.tmpdir}/data/app/financials-exports}")
     private String exportDir;
 
     private ExecutorService threadPool;

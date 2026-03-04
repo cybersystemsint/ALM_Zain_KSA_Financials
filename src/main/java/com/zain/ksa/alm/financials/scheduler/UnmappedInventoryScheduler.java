@@ -51,7 +51,7 @@ public class UnmappedInventoryScheduler {
      * Refreshes all three pre-warmed exports in the finally block so
      * users get instant downloads regardless of success or failure.
      */
-    @Scheduled(cron = "${app.scheduler.unmapped-check-cron:0 0 2 * * *}")
+    @Scheduled(cron = "${app.scheduler.unmapped-check-cron:0 0 20 * * *}")
     public void runUnmappedReconciliation() {
         if (fullRunning) {
             log.warn("Full reconciliation already running, skipping");

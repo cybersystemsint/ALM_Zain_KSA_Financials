@@ -44,19 +44,6 @@ import com.zain.ksa.alm.financials.service.FarReportService;
 
 /**
  * Production-ready FAR report service.
- *
- * <h3>Changes from previous version</h3>
- * <ul>
- *   <li><b>SQL injection fix</b>: {@link #findAllWithSummary} now validates column
- *       names from {@code filter.columnName} and {@code filter.filterBy} keys against
- *       a whitelist before interpolating them into SQL. Previously these went straight
- *       into the WHERE clause — a malicious {@code columnName} like
- *       {@code "1=1; DROP TABLE tb_FarReport; --"} would execute.</li>
- *   <li><b>Date range filtering fix</b>: {@link #findAllWithSummary} now applies
- *       dateFrom/dateTo filters to BOTH the raw SQL aggregation query AND the JPA
- *       paged query, ensuring consistent filtering across all results.</li>
- * </ul>
- *
  * <p>Everything else is unchanged: upload, CRUD, pre-warm, CSV export.</p>
  */
 @Service
@@ -78,8 +65,6 @@ public class FarReportServiceImpl implements FarReportService {
     private static final GenericSpecificationBuilder<FarReport> SPEC_BUILDER =
             new GenericSpecificationBuilder<>("recordDatetime");
 
-    // ── Column whitelist (matches tb_FarReport schema) ────────────────────────
-    // Used by: findAllWithSummary (SQL injection protection), legacy CSV export
 
     private static final String[] COLUMNS = {
         "recordNo", "recordDatetime", "book", "assetId", "quantity",

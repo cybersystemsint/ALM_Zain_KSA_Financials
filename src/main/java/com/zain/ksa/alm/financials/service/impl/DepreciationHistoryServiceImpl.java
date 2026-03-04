@@ -49,29 +49,6 @@ import static org.hibernate.jpa.QueryHints.HINT_READONLY;
 
 /**
  * Service implementation for DepreciationHistory.
- *
- * <p><b>Normalization Strategy (v2):</b></p>
- * <ul>
- *   <li>DepreciationHistory is now LEAN: 10 columns, stores only computed metrics.</li>
- *   <li>Master asset data (description, category, cost, etc.) remains in FarReport.</li>
- *   <li>API responses use JOINs to populate composite DepreciationDetailDTO.</li>
- *   <li>Filters applied to DepreciationHistory, then JOINed with FarReport for results.</li>
- * </ul>
- *
- * <p><b>Performance benefits:</b></p>
- * <ul>
- *   <li>Batch inserts: 6× faster (30M writes vs 180M)</li>
- *   <li>Storage: 7.5× smaller per 3M rows</li>
- *   <li>JOIN queries: Fast indexed lookups on assetId (FK)</li>
- *   <li>Master data sync: Automatic (no duplication)</li>
- * </ul>
- *
- * <p><b>Caching Strategy (v2):</b></p>
- * <ul>
- *   <li>Cache key uses Objects.hash() for robust null-safe hashing</li>
- *   <li>No string concatenation that produces "null:null:..." keys</li>
- *   <li>Filter changes immediately invalidate stale cache entries</li>
- * </ul>
  */
 @Service
 public class DepreciationHistoryServiceImpl implements DepreciationHistoryService {
