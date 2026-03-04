@@ -1,81 +1,41 @@
 package com.zain.ksa.alm.financials.dto.response;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Value;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.time.LocalDateTime;
 
 /**
- * DTO for DepreciationHistory records exposed via the REST API and exports.
+ * Lean DTO for DepreciationHistory records.
  *
- * <p>Contains the full asset snapshot plus computed depreciation fields.
- * The depreciationPeriod ("YYYY-MM") is the business key for monthly uniqueness.</p>
+ * <p>Contains ONLY depreciation metrics and foreign keys. Master asset data
+ * (description, category, cost, etc.) are queried separately or via JOIN.</p>
+ *
+ * <p><b>Usage:</b></p>
+ * <ul>
+ *   <li>REST API responses: GET /depreciation-history/list</li>
+ *   <li>Exports: CSV/Excel with minimal columns</li>
+ *   <li>Scheduler verification: Confirm computed values persisted correctly</li>
+ * </ul>
+ *
+ * <p><b>Field order:</b> Matches database column order for consistency.</p>
  */
-@Value
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class DepreciationHistoryDTO {
 
-    Long recordNo;
-    LocalDateTime recordDatetime;
-    String book;
-    String assetId;
-    String depreciationPeriod;
-    Integer quantity;
-    String description;
-    String serialNumber;
-    String assetType;
-    String tagNumber;
-    String picStatus;
-    LocalDateTime picDate;
-    LocalDateTime cipDeliveryDate;
-    String linkId;
-    String acceptanceNumber;
-    String depreciateFlag;
-    String cipEu;
-    String invoiceNumber;
-    String poNumber;
-    String poLineNumber;
-    String uplLine;
-    String transferToNewFar;
-    String assetStatus;
-    Double value;
-    String partNumber;
-    String vendorName;
-    String vendorNumber;
-    String mergedCode;
-    LocalDateTime createdDate;
-    LocalDateTime updatedDate;
-    String costAccount;
-    String accumulatedDepreAccount;
-    String cipCostAccount;
-    String expenseCostCenter;
-    String expenseAccount;
-    Integer life;
-    LocalDateTime datePlacedInService;
-    Double cost;
-    Double nbv;
-    Double depreciationAmount;
-    Double ytdDepreciation;
-    Double depreciationReserve;
-    Double salvageValue;
-    String category;
-    String categoryDescription;
-    String locationSegment1;
-    String locationSegment2;
-    String locationSegment3;
-    String locationSegment4;
-    String locations;
-    Integer sequenceNumber;
-    Double monthlyDepreciationAmt;
-    Double accumulatedDepreciationAmt;
-    LocalDateTime depreciationDate;
-    Double netCost;
-    String statusFlag;
-    String changedBy;
-    String insertedBy;
-    String financialApproval;
-    LocalDateTime changedDate;
-    String nodeType;
-    String createdBy;
-    String updatedBy;
-    String mapped;
+    private Long recordNo;
+    private String assetId;
+    private String depreciationPeriod;
+    private Double monthlyDepreciationAmt;
+    private Double accumulatedDepreciationAmt;
+    private Double netCost;
+    private LocalDateTime depreciationDate;
+    private LocalDateTime recordDatetime;
+    private String createdBy;
+    private String changedBy;
 }
