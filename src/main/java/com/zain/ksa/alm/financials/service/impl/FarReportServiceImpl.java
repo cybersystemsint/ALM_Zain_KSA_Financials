@@ -219,7 +219,7 @@ public class FarReportServiceImpl implements FarReportService {
         if (dateFrom != null) filter.setDateFrom(dateFrom.toString());
         if (dateTo   != null) filter.setDateTo(dateTo.toString());
 
-        boolean hasFilters = !params.isEmpty();
+       boolean hasFilters = params.size() > 0;
 
         String aggregateSql =
             "SELECT COUNT(*) AS cnt," +
@@ -540,46 +540,72 @@ public class FarReportServiceImpl implements FarReportService {
 
     // ── Query helpers ─────────────────────────────────────────────────────────
 
-    /**
-     * Thread-safe date parsing using immutable DateTimeFormatter.
-     * Replaces the old synchronized(SimpleDateFormat) approach.
-     */
-    private LocalDateTime parseDate(String dateStr, boolean startOfDay) {
-        if (dateStr == null || dateStr.isBlank()) return null;
+private LocalDateTime parseDate(String dateStr, boolean startOfDay) {
 
-        // Try as LocalDateTime first (most common for stored values)
-        for (DateTimeFormatter fmt : DATE_PARSE_FORMATS) {
-            try {
-                return LocalDateTime.parse(dateStr, fmt);
-            } catch (DateTimeParseException ignored) {}
-        }
-
-        // Try as LocalDate (date-only input from UI)
-        for (DateTimeFormatter fmt : DATE_PARSE_FORMATS) {
-            try {
-                LocalDate date = LocalDate.parse(dateStr, fmt);
-                return startOfDay ? date.atStartOfDay() : date.atTime(23, 59, 59);
-            } catch (DateTimeParseException ignored) {}
-        }
-
-        log.warn("[FarReportService] Could not parse date string: '{}'", dateStr);
+    if (dateStr == null || dateStr.isBlank()) {
         return null;
     }
 
-    private String validateColumn(String input) {
-        if (input == null) return null;
-        String trimmed = input.trim();
-        for (String col : COLUMNS) {
-            if (col.equalsIgnoreCase(trimmed)) return col;
+    String trimmed = dateStr.trim();
+
+    for (DateTimeFormatter formatter : DATE_PARSE_FORMATS) {
+
+        try {
+            LocalDateTime dt = LocalDateTime.parse(trimmed, formatter);
+            return dt;
         }
+        catch (DateTimeParseException ignored) {}
+
+        try {
+            LocalDate date = LocalDate.parse(trimmed, formatter);
+            return startOfDay
+                    ? date.atStartOfDay()
+                    : date.atTime(23,59,59);
+        }
+        catch (DateTimeParseException ignored) {}
+    }
+
+    log.warn("[FarReportService] Could not parse date: {}", dateStr);
+    return null;
+}
+
+private String validateColumn(String input) {
+    if (input == null) {
         return null;
     }
 
-    private static BigDecimal toBigDecimal(Object val) {
-        if (val == null) return BigDecimal.ZERO;
-        if (val instanceof BigDecimal) return (BigDecimal) val;
-        return new BigDecimal(val.toString());
+    String normalized = input.trim();
+
+    for (String allowed : ALLOWED_COLUMNS) {
+        if (allowed.equalsIgnoreCase(normalized)) {
+            return allowed;
+        }
     }
+
+    log.warn("[FarReportService] Invalid column requested: {}", input);
+    return null;
+}
+
+private static BigDecimal toBigDecimal(Object value) {
+
+    if (value == null) {
+        return BigDecimal.ZERO;
+    }
+
+    if (value instanceof BigDecimal) {
+        return (BigDecimal) value;
+    }
+
+    if (value instanceof Number) {
+        return BigDecimal.valueOf(((Number) value).doubleValue());
+    }
+
+    try {
+        return new BigDecimal(value.toString());
+    } catch (Exception e) {
+        return BigDecimal.ZERO;
+    }
+}
 
     // ── Row-mapping helpers ───────────────────────────────────────────────────
 
@@ -594,68 +620,97 @@ public class FarReportServiceImpl implements FarReportService {
         return null;
     }
 
-    private Integer getInt(Map<String, Object> row, String... keys) {
-        String val = getStr(row, keys);
-        if (val == null) return null;
-        try {
-            return Integer.parseInt(val);
-        } catch (NumberFormatException e) {
-            try {
-                return (int) Double.parseDouble(val);
-            } catch (NumberFormatException e2) {
-                return null;
-            }
-        }
+private Integer getInt(Map<String,Object> row, String... keys) {
+
+    String val = getStr(row, keys);
+
+    if (val == null) {
+        return null;
     }
 
-    private Double getDbl(Map<String, Object> row, String... keys) {
-        String val = getStr(row, keys);
-        if (val == null) return null;
+    try {
+        return Integer.valueOf(val);
+    }
+    catch (Exception e) {
         try {
-            return Double.parseDouble(val);
-        } catch (NumberFormatException e) {
+            return (int) Double.parseDouble(val);
+        }
+        catch (Exception ex) {
             return null;
         }
     }
+}
+
+private Double getDbl(Map<String,Object> row, String... keys) {
+
+    String val = getStr(row, keys);
+
+    if (val == null) {
+        return null;
+    }
+
+    try {
+        val = val.replace(",", "");
+        return Double.parseDouble(val);
+    }
+    catch (Exception e) {
+        return null;
+    }
+}
 
     /**
      * Parses a date field from an upload row map.
      * Uses thread-safe DateTimeFormatter instead of SimpleDateFormat.
      */
-    private Date getDate(Map<String, Object> row, String... keys) {
-        Object raw = null;
-        for (String key : keys) {
-            raw = row.get(key);
-            if (raw != null) break;
-        }
-        if (raw == null) return null;
+private Date getDate(Map<String,Object> row, String... keys) {
 
-        // Already a java.util.Date or subtype — return directly
-        if (raw instanceof Date) return (Date) raw;
+    Object raw = null;
 
-        // java.time types from JDBC / Jackson
-        if (raw instanceof java.time.LocalDate)
-            return java.sql.Date.valueOf((java.time.LocalDate) raw);
-        if (raw instanceof java.time.LocalDateTime)
-            return java.sql.Timestamp.valueOf((java.time.LocalDateTime) raw);
+    for (String key : keys) {
+        raw = row.get(key);
+        if (raw != null) break;
+    }
 
-        String val = raw.toString().trim();
-        if (val.isEmpty()) return null;
-
-        // Try each DateTimeFormatter (all immutable — no synchronization needed)
-        for (DateTimeFormatter fmt : DATE_PARSE_FORMATS) {
-            // Try LocalDateTime parse first
-            try {
-                return java.sql.Timestamp.valueOf(LocalDateTime.parse(val, fmt));
-            } catch (DateTimeParseException ignored) {}
-
-            // Then LocalDate parse
-            try {
-                return java.sql.Date.valueOf(LocalDate.parse(val, fmt));
-            } catch (DateTimeParseException ignored) {}
-        }
-
-        log.warn("[FAR Upload] Could not parse date '{}' for key(s) {}", val, Arrays.toString(keys));
+    if (raw == null) {
         return null;
     }
+
+    if (raw instanceof Date) {
+        return (Date) raw;
+    }
+
+    if (raw instanceof LocalDate) {
+        return java.sql.Date.valueOf((LocalDate) raw);
+    }
+
+    if (raw instanceof LocalDateTime) {
+        return java.sql.Timestamp.valueOf((LocalDateTime) raw);
+    }
+
+    String val = raw.toString().trim();
+
+    if (val.isEmpty()) {
+        return null;
+    }
+
+    for (DateTimeFormatter formatter : DATE_PARSE_FORMATS) {
+
+        try {
+            LocalDateTime dt = LocalDateTime.parse(val, formatter);
+            return java.sql.Timestamp.valueOf(dt);
+        }
+        catch (DateTimeParseException ignored) {}
+
+        try {
+            LocalDate date = LocalDate.parse(val, formatter);
+            return java.sql.Date.valueOf(date);
+        }
+        catch (DateTimeParseException ignored) {}
+    }
+
+    log.warn("[FAR Upload] Invalid date value '{}'", val);
+
+    return null;
+}
+
 }
