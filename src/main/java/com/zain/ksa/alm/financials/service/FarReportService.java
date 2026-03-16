@@ -1,7 +1,4 @@
 package com.zain.ksa.alm.financials.service;
-
-import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.List;
 import java.util.Map;
 
@@ -31,6 +28,5 @@ public interface FarReportService {
 
     Map<String, Object> processUpload(List<Map<String, Object>> rows, String source);
 
-    void streamExportToCsv(PrintWriter writer, String column, String value,
-                           String operator) throws IOException;
+
 }

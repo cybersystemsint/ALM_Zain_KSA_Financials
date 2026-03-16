@@ -53,24 +53,58 @@ public class FarController {
         return ResponseEntity.ok(farReportService.findAllWithSummary(filter, pageable));
     }
 
-@PostMapping(value = "/upload", consumes = MediaType.APPLICATION_JSON_VALUE)
-public ResponseEntity<ApiResponse<Map<String, Object>>> upload(
-        @RequestBody java.util.List<Map<String, Object>> data,
-        @RequestParam(defaultValue = "Excel") String source) {
+    @PostMapping(value = "/upload", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiResponse<Map<String, Object>>> upload(
+            @RequestBody java.util.List<Map<String, Object>> data,
+            @RequestParam(defaultValue = "Excel") String source) {
 
-    if (data == null || data.isEmpty()) {
-        return ResponseEntity.badRequest()
-                .body(ApiResponse.error("No data provided"));
+        if (data == null || data.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("No data provided"));
+        }
+        if (data.size() > 10_000) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Upload limited to 10,000 rows per request"));
+        }
+
+        Map<String, Object> result = farReportService.processUpload(data, source);
+
+        // ── Build human-readable message matching the response format ──────────
+        String status   = (String)  result.get("status");
+        int    total    = ((Number) result.get("total")).intValue();
+        int    failed   = ((Number) result.get("failed")).intValue();
+        int    inserted = ((Number) result.get("inserted")).intValue();
+        int    updated  = ((Number) result.get("updated")).intValue();
+
+        String message;
+        if ("FAILED".equals(status)) {
+            // All rows rejected
+            message = String.format(
+                "Upload failed: all %d row(s) were rejected. Check 'rowErrors' for details.",
+                failed
+            );
+        } else if ("PARTIAL".equals(status)) {
+            // Some rows succeeded, some failed
+            message = String.format(
+                "Upload partially completed: %d inserted, %d updated, %d row(s) rejected. Check 'rowErrors' for details.",
+                inserted, updated, failed
+            );
+        } else {
+            // Full success
+            if (updated > 0 && inserted > 0) {
+                message = String.format(
+                    "Upload successful: %d inserted, %d updated.", inserted, updated);
+            } else if (updated > 0) {
+                message = String.format("Upload successful: %d row(s) updated.", updated);
+            } else {
+                message = String.format("Upload successful: %d row(s) inserted.", inserted);
+            }
+        }
+
+        // success=true on the outer envelope always — the HTTP call itself succeeded.
+        // The upload status (SUCCESS / PARTIAL / FAILED) lives inside data.status.
+        return ResponseEntity.ok(ApiResponse.ok(message, result));
     }
-    if (data.size() > 10_000) {
-        return ResponseEntity.badRequest()
-                .body(ApiResponse.error("Upload limited to 10,000 rows per request"));
-    }
-
-    Map<String, Object> result = farReportService.processUpload(data, source);
-    return ResponseEntity.ok(ApiResponse.ok(result));
-}
-
 
     @PostMapping("/export")
     public ResponseEntity<ApiResponse<Map<String, Object>>> startExport(
@@ -80,18 +114,14 @@ public ResponseEntity<ApiResponse<Map<String, Object>>> upload(
         if (filter == null) filter = new DynamicFilterRequest();
         log.info("[FarController] Export request, format={}", format);
 
-        // Start export job
         String jobId = exportJobService.startExport("far_report", filter, format);
-
-        // Get initial status
         Map<String, Object> status = exportJobService.getStatus(jobId);
         String currentStatus = status != null ? (String) status.get("status") : "RUNNING";
 
-        // Return unified response format (same as unmapped inventory)
         return ResponseEntity.accepted().body(ApiResponse.ok(Map.of(
-            "jobId", jobId,
-            "status", currentStatus,
-            "pollUrl", "/exports/status/" + jobId,
+            "jobId",       jobId,
+            "status",      currentStatus,
+            "pollUrl",     "/exports/status/" + jobId,
             "downloadUrl", "/exports/download/" + jobId
         )));
     }

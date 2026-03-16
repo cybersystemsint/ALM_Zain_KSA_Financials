@@ -6,10 +6,10 @@ import com.zain.ksa.alm.financials.dto.response.AssetDepreciationDetailDTO;
 import com.zain.ksa.alm.financials.dto.response.DepreciationHistoryDTO;
 import com.zain.ksa.alm.financials.dto.response.PagedResponse;
 import com.zain.ksa.alm.financials.entity.DepreciationHistory;
+import com.zain.ksa.alm.financials.entity.FarReport;
 import com.zain.ksa.alm.financials.exception.ResourceNotFoundException;
 import com.zain.ksa.alm.financials.repository.DepreciationHistoryRepository;
 import com.zain.ksa.alm.financials.service.DepreciationHistoryService;
-import com.zain.ksa.alm.financials.service.export.ExportStrategyFactory;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,32 +23,60 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
-import javax.persistence.TypedQuery;
-import javax.persistence.criteria.CriteriaBuilder;
-import javax.persistence.criteria.CriteriaQuery;
-import javax.persistence.criteria.Join;
-import javax.persistence.criteria.JoinType;
-import javax.persistence.criteria.Predicate;
-import javax.persistence.criteria.Root;
-import javax.servlet.http.HttpServletResponse;
-
-import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.Date;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
-import com.zain.ksa.alm.financials.entity.FarReport;
-
-import static org.hibernate.jpa.QueryHints.HINT_CACHEABLE;
-import static org.hibernate.jpa.QueryHints.HINT_FETCH_SIZE;
-import static org.hibernate.jpa.QueryHints.HINT_READONLY;
 
 /**
  * Service implementation for DepreciationHistory.
+ *
+ * ── Changes from previous version ───────────────────────────────────────────
+ *
+ *  ① exportToResponse() REMOVED entirely.
+ *
+ *    PROBLEM 1 — OOM on large datasets:
+ *    The method called stream.collect(Collectors.groupingBy(...)) which
+ *    materializes the ENTIRE result set into a HashMap in heap before any
+ *    row is written to the response. For a 3M-row table this allocates
+ *    ~2–4 GB of objects, triggering OutOfMemoryError or GC pauses that
+ *    stall the JVM for tens of seconds.
+ *
+ *    PROBLEM 2 — N+1 query explosion:
+ *    Inside the flatMap, repository.findFarReportByAssetId(assetId) fired
+ *    one DB round-trip per unique assetId. With 100K unique assets that is
+ *    100,000 individual SQL SELECT statements — equivalent to a full table
+ *    scan repeated 100K times.
+ *
+ *    PROBLEM 3 — Dead code / wrong thread:
+ *    The production export path is ExportExecutor → FileExportStrategy →
+ *    ExportController (async job system). exportToResponse() wrote directly
+ *    to HttpServletResponse from a stream lambda, bypassing the job system
+ *    entirely. If ever called, it would write to an HTTP response from a
+ *    background thread context, potentially causing IllegalStateException
+ *    ("response already committed") or writing to a closed socket.
+ *
+ *    FIX: Removed. All depreciation exports go through ExportExecutor which
+ *    uses a proper JDBC streaming cursor (setFetchSize(MIN_VALUE)), writes
+ *    rows one at a time to disk, and serves the completed file via
+ *    ExportController with GZIP compression. The DepreciationHistoryController
+ *    already routes to ExportJobService.startExport("depreciation", ...) so
+ *    no controller changes are needed.
+ *
+ *  ② ExportStrategyFactory dependency REMOVED.
+ *    It was only used by the deleted exportToResponse(). Removing it
+ *    eliminates an unnecessary Spring bean dependency.
+ *
+ *  ③ findAll() — N+1 for list endpoint documented and left as-is.
+ *    The list endpoint (findAll) does one extra query per page to fetch
+ *    FarReport records via findFarReportsByAssetIds(). This is an acceptable
+ *    N=2 pattern for pagination (page query + one IN-clause lookup) and does
+ *    not need fixing. It is documented here for clarity.
+ *
+ *  ④ Everything else unchanged — findAll, findById, scheduler support,
+ *    save, saveAll, mergeToCompositeDTO.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 @Service
 public class DepreciationHistoryServiceImpl implements DepreciationHistoryService {
@@ -56,7 +84,6 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
     private static final Logger log = LoggerFactory.getLogger(DepreciationHistoryServiceImpl.class);
 
     private final DepreciationHistoryRepository repository;
-    private final ExportStrategyFactory exportFactory;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -64,29 +91,23 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
     private static final GenericSpecificationBuilder<DepreciationHistory> SPEC_BUILDER =
             new GenericSpecificationBuilder<>("depreciationDate");
 
-    public DepreciationHistoryServiceImpl(
-            DepreciationHistoryRepository repository,
-            ExportStrategyFactory exportFactory) {
+    public DepreciationHistoryServiceImpl(DepreciationHistoryRepository repository) {
         this.repository = repository;
-        this.exportFactory = exportFactory;
     }
 
-    // ── Read: Composite DTO with JOIN ────────────────────────────────────────
+    // ── Read: Paginated composite DTO ─────────────────────────────────────────
 
     /**
-     * Fetch paginated depreciation records with full asset context via JOIN.
+     * Fetch paginated depreciation records with full asset context.
      *
-     * <p><b>Strategy:</b></p>
-     * <ol>
-     *   <li>Apply DynamicFilterRequest to DepreciationHistory (filters on computed metrics)</li>
-     *   <li>INNER JOIN with FarReport on assetId</li>
-     *   <li>Project both entities into composite AssetDepreciationDetailDTO</li>
-     *   <li>Cache per filter + pageable key using hash-based key generation</li>
-     * </ol>
+     * Query pattern (2 queries per page, not N+1):
+     *   1. Page query on tb_DepreciationHistory with filter spec
+     *   2. One IN-clause on tb_FarReport for the asset IDs on this page
      *
-     * @param filter DynamicFilterRequest (applied to DepreciationHistory columns)
-     * @param pageable pagination parameters
-     * @return paged composite DTOs with asset context
+     * This is an intentional and acceptable trade-off: a JOIN on the JPA
+     * pagination layer would require a count query workaround, and the
+     * ExportExecutor already handles the full-table case with a proper
+     * SQL JOIN + streaming cursor.
      */
     @Override
     @Cacheable(
@@ -96,10 +117,7 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
     )
     @Transactional(readOnly = true)
     public PagedResponse<AssetDepreciationDetailDTO> findAll(DynamicFilterRequest filter, Pageable pageable) {
-        // Build specification for DepreciationHistory filtering
         Specification<DepreciationHistory> spec = SPEC_BUILDER.build(filter);
-
-        // Fetch page of DepreciationHistory records matching filter
         Page<DepreciationHistory> depreciationPage = repository.findAll(spec, pageable);
 
         if (depreciationPage.isEmpty()) {
@@ -113,19 +131,15 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
                     .build();
         }
 
-        // Extract asset IDs from depreciation records
         List<String> assetIds = depreciationPage.getContent().stream()
                 .map(DepreciationHistory::getAssetId)
                 .collect(Collectors.toList());
 
-        // Fetch FarReport records for these assets in one query
+        // Single IN-clause query — not N+1
         List<FarReport> farReports = repository.findFarReportsByAssetIds(assetIds);
-
-        // Build map for O(1) lookup
-        java.util.Map<String, FarReport> farMap = farReports.stream()
+        Map<String, FarReport> farMap = farReports.stream()
                 .collect(Collectors.toMap(FarReport::getAssetId, f -> f, (a, b) -> a));
 
-        // Merge depreciation + asset data into composite DTOs
         List<AssetDepreciationDetailDTO> content = depreciationPage.getContent().stream()
                 .map(depr -> mergeToCompositeDTO(depr, farMap.get(depr.getAssetId())))
                 .collect(Collectors.toList());
@@ -141,11 +155,7 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
     }
 
     /**
-     * Fetch single depreciation record with asset context by DepreciationHistory ID.
-     *
-     * @param id DepreciationHistory.recordNo
-     * @return composite DTO with asset details
-     * @throws ResourceNotFoundException if not found
+     * Fetch single record with asset context by DepreciationHistory ID.
      */
     @Override
     @Cacheable(value = "depreciation:single", key = "#id")
@@ -154,116 +164,25 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
         DepreciationHistory depr = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("DepreciationHistory", "id", id));
 
-        FarReport far = repository.findFarReportByAssetId(depr.getAssetId())
-                .orElse(null);
-
+        FarReport far = repository.findFarReportByAssetId(depr.getAssetId()).orElse(null);
         return mergeToCompositeDTO(depr, far);
-    }
-
-    // ── Export: Stream with JOIN ──────────────────────────────────────────────
-
-    /**
-     * Stream depreciation records with asset context for large exports.
-     *
-     * <p><b>Strategy:</b></p>
-     * <ul>
-     *   <li>Stream DepreciationHistory records matching filter (server-side cursor)</li>
-     *   <li>For each batch, fetch corresponding FarReport records via assetId</li>
-     *   <li>Map to composite DTO on-the-fly</li>
-     *   <li>Feed to export strategy (CSV/Excel)</li>
-     * </ul>
-     *
-     * <p><b>Memory efficiency:</b> JDBC cursor-level streaming + batch fetches.</p>
-     *
-     * @param filter DynamicFilterRequest
-     * @param format EXCEL, CSV, etc.
-     * @param response HttpServletResponse for streaming output
-     * @throws Exception if export or streaming fails
-     */
-    @Override
-    @Transactional(readOnly = true)
-    public void exportToResponse(DynamicFilterRequest filter, ExportFormat format,
-                                 HttpServletResponse response) throws Exception {
-        log.info("[EXPORT] Starting depreciation export, format={}", format);
-
-        Specification<DepreciationHistory> spec = SPEC_BUILDER.build(filter);
-
-        try (Stream<DepreciationHistory> stream =
-                 (spec != null ? repository.streamAll(spec) : repository.streamAll())) {
-
-            // Transform stream: collect by batch, JOIN with FarReport, map to composite DTO
-            exportFactory.<AssetDepreciationDetailDTO>resolve(format)
-                    .export(
-                        stream.peek(entityManager::detach)
-                              .collect(Collectors.groupingBy(
-                                    d -> d.getAssetId(),
-                                    Collectors.toList()
-                              ))
-                              .entrySet()
-                              .stream()
-                              .flatMap(entry -> {
-                                  String assetId = entry.getKey();
-                                  List<DepreciationHistory> batch = entry.getValue();
-
-                                  // Fetch single FarReport for this assetId batch
-                                  FarReport far = repository.findFarReportByAssetId(assetId).orElse(null);
-
-                                  // Map entire batch to composite DTOs
-                                  return batch.stream()
-                                          .map(depr -> mergeToCompositeDTO(depr, far));
-                              }),
-                        response,
-                        "depreciation_history_export"
-                    );
-
-        } catch (Exception ex) {
-            log.error("[EXPORT] Depreciation export failed: {}", ex.getMessage(), ex);
-            throw ex;
-        }
-
-        log.info("[EXPORT] Depreciation export completed, format={}", format);
     }
 
     // ── Scheduler support ─────────────────────────────────────────────────────
 
-    /**
-     * Single-asset lookup for one-off corrections or diagnostics.
-     *
-     * @param assetId the asset identifier
-     * @param depreciationPeriod period in "YYYY-MM" format
-     * @return optional DepreciationHistory record
-     */
     @Override
     @Transactional(readOnly = true)
     public Optional<DepreciationHistory> findByAssetAndPeriod(String assetId, String depreciationPeriod) {
         return repository.findByAssetIdAndDepreciationPeriod(assetId, depreciationPeriod);
     }
 
-    /**
-     * Bulk-fetch DepreciationHistory records for multiple assets in a given period.
-     *
-     * <p><b>Used by DepreciationScheduler:</b> Replaces N individual queries with
-     * one IN-clause query for efficient upsert batching.</p>
-     *
-     * @param assetIds list of asset IDs
-     * @param period depreciation period ("YYYY-MM")
-     * @return list of existing DepreciationHistory records
-     */
     @Override
     @Transactional(readOnly = true)
     public List<DepreciationHistory> findByAssetIdsAndPeriod(List<String> assetIds, String period) {
-        if (assetIds == null || assetIds.isEmpty()) {
-            return List.of();
-        }
+        if (assetIds == null || assetIds.isEmpty()) return List.of();
         return repository.findByAssetIdsAndPeriod(assetIds, period);
     }
 
-    /**
-     * Single save for one-off corrections outside batch contexts.
-     *
-     * @param entity DepreciationHistory record
-     * @return saved entity
-     */
     @Override
     @CacheEvict(value = {"depreciation:list", "depreciation:single"}, allEntries = true)
     @Transactional
@@ -271,14 +190,6 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
         return repository.save(entity);
     }
 
-    /**
-     * Batch save used by DepreciationScheduler.
-     *
-     * <p>Flushes entire chunk in one JDBC round-trip instead of N individual calls.</p>
-     *
-     * @param entities list of DepreciationHistory records
-     * @return list of saved entities
-     */
     @Override
     @CacheEvict(value = {"depreciation:list", "depreciation:single"}, allEntries = true)
     @Transactional
@@ -286,29 +197,16 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
         return repository.saveAll(entities);
     }
 
-    // ── Helper: Merge DepreciationHistory + FarReport into composite DTO ──────
+    // ── Merge helper ──────────────────────────────────────────────────────────
 
     /**
-     * Merge a DepreciationHistory record with its corresponding FarReport
-     * into a composite AssetDepreciationDetailDTO.
-     *
-     * <p><b>Rules:</b></p>
-     * <ul>
-     *   <li>Depreciation fields (monthly, accumulated, netCost) come from DepreciationHistory</li>
-     *   <li>Asset fields (description, category, cost, etc.) come from FarReport</li>
-     *   <li>FarReport may be null → populate only depreciation metrics</li>
-     * </ul>
-     *
-     * @param depr DepreciationHistory record (never null)
-     * @param far FarReport record (may be null if asset was deleted)
-     * @return composite DTO
+     * Merges a DepreciationHistory record with its FarReport into a composite DTO.
+     * FarReport may be null if the asset was deleted — depreciation fields are
+     * always populated, asset fields are populated only when far != null.
      */
-    private AssetDepreciationDetailDTO mergeToCompositeDTO(
-            DepreciationHistory depr, FarReport far) {
-
+    private AssetDepreciationDetailDTO mergeToCompositeDTO(DepreciationHistory depr, FarReport far) {
         AssetDepreciationDetailDTO.AssetDepreciationDetailDTOBuilder builder =
                 AssetDepreciationDetailDTO.builder()
-                        // Depreciation metrics from DepreciationHistory
                         .recordNo(depr.getRecordNo())
                         .depreciationPeriod(depr.getDepreciationPeriod())
                         .monthlyDepreciationAmt(depr.getMonthlyDepreciationAmt())
@@ -316,13 +214,10 @@ public class DepreciationHistoryServiceImpl implements DepreciationHistoryServic
                         .netCost(depr.getNetCost())
                         .depreciationDate(depr.getDepreciationDate())
                         .recordDatetime(depr.getRecordDatetime())
-                        // Audit trail
                         .createdBy(depr.getCreatedBy())
                         .changedBy(depr.getChangedBy())
-                        // Asset ID (always available)
                         .assetId(depr.getAssetId());
 
-        // Conditionally merge asset master data from FarReport
         if (far != null) {
             builder
                     .book(far.getBook())

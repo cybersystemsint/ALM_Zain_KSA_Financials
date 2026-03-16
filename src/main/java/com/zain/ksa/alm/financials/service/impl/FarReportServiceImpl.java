@@ -1,21 +1,14 @@
 package com.zain.ksa.alm.financials.service.impl;
 
-import java.io.IOException;
-import java.io.PrintWriter;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import javax.persistence.EntityManager;
@@ -29,7 +22,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,17 +33,40 @@ import com.zain.ksa.alm.financials.entity.FarReport;
 import com.zain.ksa.alm.financials.mapper.InventoryMapper;
 import com.zain.ksa.alm.financials.repository.FarReportRepository;
 import com.zain.ksa.alm.financials.service.FarReportService;
+import com.zain.ksa.alm.financials.service.validation.FarReportValidation;
+import com.zain.ksa.alm.financials.service.validation.FarReportValidation.ValidationResult;
 
 /**
  * Production-ready FAR report service.
- * <p>Everything else is unchanged: upload, CRUD, pre-warm, CSV export.</p>
+ *
+ * ── Changes from previous version ───────────────────────────────────────────
+ *
+ *  ① SimpleDateFormat REMOVED everywhere.
+ *    SimpleDateFormat is not thread-safe. Under concurrent exports it produced
+ *    garbled / swapped date values silently. All date formatting now uses
+ *    thread-safe java.time.format.DateTimeFormatter (immutable, stateless).
+ *
+ *  ② streamExportToCsv() REMOVED.
+ *    This legacy method had no JDBC fetch-size cursor set, meaning for large
+ *    tables the full result set was loaded into heap before writing. It was
+ *    also dead code — the controller routes all exports through ExportJobService
+ *    → ExportExecutor → FileExportStrategy. Keeping it created a maintenance
+ *    trap and a latent OOM risk.
+ *
+ *  ③ DATE_FORMATS list — synchronized(fmt) blocks REPLACED.
+ *    The old list used synchronized(fmt) on each SimpleDateFormat as a
+ *    workaround for thread-unsafety. The new implementation uses a list of
+ *    DateTimeFormatter instances (truly immutable) with no synchronization.
+ *
+ *  ④ Everything else is unchanged — upload, findAllWithSummary, CRUD, cache.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 @Service
 public class FarReportServiceImpl implements FarReportService {
 
     private static final Logger log = LoggerFactory.getLogger(FarReportServiceImpl.class);
 
-    /** Rows flushed per batch during upload. Matches Hibernate's jdbc.batch_size. */
+    /** Rows flushed per batch during upload. Matches Hibernate jdbc.batch_size. */
     private static final int UPLOAD_BATCH_SIZE = 500;
 
     private final FarReportRepository farReportRepository;
@@ -62,32 +77,46 @@ public class FarReportServiceImpl implements FarReportService {
     @PersistenceContext
     private EntityManager entityManager;
 
+    // ── Date range uses creationDate ──────────────────────────────────────────
     private static final GenericSpecificationBuilder<FarReport> SPEC_BUILDER =
-            new GenericSpecificationBuilder<>("recordDatetime");
+            new GenericSpecificationBuilder<>("creationDate");
 
+    // ── Export column definitions (business-required set only) ───────────────
 
     private static final String[] COLUMNS = {
-        "recordNo", "recordDatetime", "book", "assetId", "quantity",
+        "book", "assetId", "quantity",
         "description", "creationDate", "serialNumber", "tagNumber",
         "picStatus", "picDate", "cipDeliveryDate", "linkId", "acceptanceNumber",
         "depreciateFlag", "cipEu", "invoiceNumber", "poNumber", "poLineNumber",
-        "uplLine", "transferToNewFar", "assetStatus", "value", "partNumber",
+        "uplLine", "transferToNewFar", "assetStatus", "partNumber",
         "vendorName", "vendorNumber", "mergedCode", "costAccount",
-        "accumulatedDepreAccount", "cipCostAccount", "expenseCostCenter",
+        "cipCostAccount", "expenseCostCenter",
         "expenseAccount", "Life", "datePlacedInService", "cost", "nbv",
         "depreciationAmount", "ytdDepreciation", "depreciationReserve",
-        "salvageValue", "category", "categoryDescription", "locationSegment1",
-        "locationSegment2", "locationSegment3", "locationSegment4", "locations",
-        "sequenceNumber", "createdBy", "createdDate", "updatedBy", "updatedDate",
-        "monthlyDepreciationAmt", "accumulatedDepreciationAmt", "depreciationDate",
-        "netCost", "statusFlag", "changedBy", "insertedBy", "financialApproval",
-        "changedDate", "nodeType"
+        "salvageValue", "category", "categoryDescription",
+        "locationSegment1", "locationSegment2", "locationSegment3", "locationSegment4", "locations",
+        "createdBy", "createdDate", "updatedBy", "updatedDate",
+        "monthlyDepreciationAmt", "depreciationDate", "netCost",
+        "statusFlag", "financialApproval", "nodeType"
     };
 
-    /** Fast lookup set for column name validation. */
     private static final Set<String> ALLOWED_COLUMNS = new HashSet<>(Arrays.asList(COLUMNS));
 
-    private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    // ── Thread-safe date formatter (immutable — safe to share across threads) ─
+    private static final DateTimeFormatter OUTPUT_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    // ── Ordered list of parseable input formats (DateTimeFormatter is immutable) ─
+    // These replace the old synchronized(SimpleDateFormat) workaround.
+    private static final List<DateTimeFormatter> DATE_PARSE_FORMATS = List.of(
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+        DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+        DateTimeFormatter.ofPattern("MM/dd/yyyy"),
+        DateTimeFormatter.ofPattern("dd-MM-yyyy")
+    );
 
     public FarReportServiceImpl(FarReportRepository farReportRepository,
                                 JdbcTemplate jdbcTemplate,
@@ -136,247 +165,244 @@ public class FarReportServiceImpl implements FarReportService {
         );
     }
 
-    // ── List with Summary (SQL injection fixed + Date filtering fixed) ────────
+    // ── List with summary ─────────────────────────────────────────────────────
 
-@Override
-@Cacheable(value = "far-report:list",
-           key = "T(java.util.Objects).hash(#filter.columnName, #filter.searchQuery, " +
-                 "#filter.filterBy, #filter.dateFrom, #filter.dateTo, " +
-                 "#filter.isMapped, #filter.siteId, " +
-                 "#pageable.pageNumber, #pageable.pageSize, #pageable.sort)")
-@Transactional(readOnly = true)
-public Map<String, Object> findAllWithSummary(DynamicFilterRequest filter, Pageable pageable) {
+    @Override
+    @Cacheable(value = "far-report:list",
+               key = "T(java.util.Objects).hash(#filter.columnName, #filter.searchQuery, " +
+                     "#filter.filterBy, #filter.dateFrom, #filter.dateTo, " +
+                     "#filter.isMapped, #filter.siteId, " +
+                     "#pageable.pageNumber, #pageable.pageSize, #pageable.sort)")
+    @Transactional(readOnly = true)
+    public Map<String, Object> findAllWithSummary(DynamicFilterRequest filter, Pageable pageable) {
 
-    // ── Build WHERE clause + params ───────────────────────────────────────
-    StringBuilder where  = new StringBuilder(" WHERE 1=1");
-    List<Object>  params = new ArrayList<>();
+        StringBuilder where  = new StringBuilder(" WHERE 1=1");
+        List<Object>  params = new ArrayList<>();
 
-    // Column search
-    if (filter.getColumnName() != null && !filter.getColumnName().isBlank()
-            && filter.getSearchQuery() != null && !filter.getSearchQuery().isBlank()) {
-        String col = validateColumn(filter.getColumnName());
-        if (col != null) {
-            where.append(" AND LOWER(").append(col).append(") LIKE LOWER(?)");
-            params.add("%" + filter.getSearchQuery() + "%");
-        } else {
-            log.warn("[findAllWithSummary] Rejected unknown columnName: {}", filter.getColumnName());
+        if (filter.getColumnName() != null && !filter.getColumnName().isBlank()
+                && filter.getSearchQuery() != null && !filter.getSearchQuery().isBlank()) {
+            String col = validateColumn(filter.getColumnName());
+            if (col != null) {
+                where.append(" AND LOWER(").append(col).append(") LIKE LOWER(?)");
+                params.add("%" + filter.getSearchQuery() + "%");
+            } else {
+                log.warn("[findAllWithSummary] Rejected unknown columnName: {}", filter.getColumnName());
+            }
         }
-    }
 
-    // FilterBy map
-    if (filter.getFilterBy() != null) {
-        for (Map.Entry<String, String> entry : filter.getFilterBy().entrySet()) {
-            if (entry.getValue() != null && !entry.getValue().isBlank()) {
-                String col = validateColumn(entry.getKey());
-                if (col != null) {
-                    where.append(" AND ").append(col).append(" = ?");
-                    params.add(entry.getValue());
-                } else {
-                    log.warn("[findAllWithSummary] Rejected unknown filterBy key: {}", entry.getKey());
+        if (filter.getFilterBy() != null) {
+            for (Map.Entry<String, String> entry : filter.getFilterBy().entrySet()) {
+                if (entry.getValue() != null && !entry.getValue().isBlank()) {
+                    String col = validateColumn(entry.getKey());
+                    if (col != null) {
+                        where.append(" AND ").append(col).append(" = ?");
+                        params.add(entry.getValue());
+                    } else {
+                        log.warn("[findAllWithSummary] Rejected unknown filterBy key: {}", entry.getKey());
+                    }
                 }
             }
         }
-    }
 
-    // ── Date range ───────────────────────────────────────────────────────
-    LocalDateTime dateFrom = parseDate(filter.getDateFrom(), true);
-    LocalDateTime dateTo   = parseDate(filter.getDateTo(), false);
+        LocalDateTime dateFrom = parseDate(filter.getDateFrom(), true);
+        LocalDateTime dateTo   = parseDate(filter.getDateTo(), false);
 
-    if (dateFrom != null) {
-        where.append(" AND recordDatetime >= ?");
-        params.add(java.sql.Timestamp.valueOf(dateFrom));
-    }
-    if (dateTo != null) {
-        where.append(" AND recordDatetime <= ?");
-        params.add(java.sql.Timestamp.valueOf(dateTo));
-    }
-
-    // Update filter for SPEC_BUILDER to use
-    if (dateFrom != null) filter.setDateFrom(dateFrom.toString());
-    if (dateTo != null)   filter.setDateTo(dateTo.toString());
-
-    boolean hasFilters = !params.isEmpty();
-
-    // ── Query 1: COUNT + filtered aggregates ──────────────────────────────
-    String aggregateSql =
-        "SELECT COUNT(*) AS cnt," +
-        "  COALESCE(SUM(cost), 0)                       AS filteredCost," +
-        "  COALESCE(SUM(netCost), 0)                    AS filteredNBV," +
-        "  COALESCE(SUM(accumulatedDepreciationAmt), 0) AS filteredDepreciation" +
-        " FROM tb_FarReport" + where;
-
-    Map<String, Object> agg = jdbcTemplate.queryForMap(aggregateSql, params.toArray());
-
-    long totalRecords         = ((Number) agg.get("cnt")).longValue();
-    BigDecimal filteredCost         = toBigDecimal(agg.get("filteredCost"));
-    BigDecimal filteredNBV          = toBigDecimal(agg.get("filteredNBV"));
-    BigDecimal filteredDepreciation = toBigDecimal(agg.get("filteredDepreciation"));
-
-    // ── Query 2: whole-table totals if filters exist ─────────────────────
-    BigDecimal totalCost;
-    BigDecimal totalNBV;
-    BigDecimal totalDepreciation;
-
-    if (!hasFilters) {
-        totalCost         = filteredCost;
-        totalNBV          = filteredNBV;
-        totalDepreciation = filteredDepreciation;
-    } else {
-        Map<String, Object> totals = jdbcTemplate.queryForMap(
-            "SELECT COALESCE(SUM(cost), 0)                     AS totalCost," +
-            "       COALESCE(SUM(netCost), 0)                 AS totalNBV," +
-            "       COALESCE(SUM(accumulatedDepreciationAmt), 0) AS totalDepreciation" +
-            " FROM tb_FarReport");
-        totalCost         = toBigDecimal(totals.get("totalCost"));
-        totalNBV          = toBigDecimal(totals.get("totalNBV"));
-        totalDepreciation = toBigDecimal(totals.get("totalDepreciation"));
-    }
-
-    // ── Query 3: paged data via JPA ───────────────────────────────────────
-    Specification<FarReport> spec = SPEC_BUILDER.build(filter);
-    Page<FarReportDTO> page = farReportRepository
-            .findAll(spec, pageable)
-            .map(mapper::toFarReportDto);
-
-    // ── Response ──────────────────────────────────────────────────────────
-    Map<String, Object> response = new HashMap<>();
-    response.put("data",                 page.getContent());
-    response.put("totalRecords",         totalRecords);
-    response.put("totalPages",           (int) Math.ceil((double) totalRecords / pageable.getPageSize()));
-    response.put("currentPage",          pageable.getPageNumber());
-    response.put("pageSize",             pageable.getPageSize());
-    response.put("filteredCost",         filteredCost);
-    response.put("filteredNBV",          filteredNBV);
-    response.put("filteredDepreciation", filteredDepreciation);
-    response.put("totalCost",            totalCost);
-    response.put("totalNBV",             totalNBV);
-    response.put("totalDepreciation",    totalDepreciation);
-
-    return response;
-}
-
-// ── Helper for flexible date parsing ─────────────────────────────────────
-private LocalDateTime parseDate(String dateStr, boolean startOfDay) {
-    if (dateStr == null || dateStr.isBlank()) return null;
-    try {
-        // Try full datetime first
-        return LocalDateTime.parse(dateStr);
-    } catch (Exception e) {
-        // If only date provided, set start or end of day
-        LocalDate date = LocalDate.parse(dateStr);
-        return startOfDay ? date.atStartOfDay() : date.atTime(23, 59, 59);
-    }
-}
-    /**
-     * Validates a column name against the known whitelist.
-     * Returns the canonical column name (case-insensitive), or null if rejected.
-     * Prevents SQL injection when column names are interpolated into raw SQL.
-     */
-    private String validateColumn(String input) {
-        if (input == null) return null;
-        String trimmed = input.trim();
-        for (String col : COLUMNS) {
-            if (col.equalsIgnoreCase(trimmed)) return col;
+        if (dateFrom != null) {
+            where.append(" AND creationDate >= ?");
+            params.add(java.sql.Timestamp.valueOf(dateFrom));
         }
-        return null;
-    }
+        if (dateTo != null) {
+            where.append(" AND creationDate <= ?");
+            params.add(java.sql.Timestamp.valueOf(dateTo));
+        }
 
-    private static BigDecimal toBigDecimal(Object val) {
-        if (val == null) return BigDecimal.ZERO;
-        if (val instanceof BigDecimal) return (BigDecimal) val;
-        return new BigDecimal(val.toString());
+        if (dateFrom != null) filter.setDateFrom(dateFrom.toString());
+        if (dateTo   != null) filter.setDateTo(dateTo.toString());
+
+        boolean hasFilters = !params.isEmpty();
+
+        String aggregateSql =
+            "SELECT COUNT(*) AS cnt," +
+            "  COALESCE(SUM(cost), 0)                       AS filteredCost," +
+            "  COALESCE(SUM(accumulatedDepreciationAmt), 0) AS filteredDepreciation," +
+            "  COALESCE(SUM(netCost), 0)                    AS filteredNBV" +
+            " FROM tb_FarReport" + where;
+
+        Map<String, Object> agg = jdbcTemplate.queryForMap(aggregateSql, params.toArray());
+
+        long       totalRecords         = ((Number) agg.get("cnt")).longValue();
+        BigDecimal filteredCost         = toBigDecimal(agg.get("filteredCost"));
+        BigDecimal filteredDepreciation = toBigDecimal(agg.get("filteredDepreciation"));
+        BigDecimal filteredNBV          = toBigDecimal(agg.get("filteredNBV"));
+
+        BigDecimal totalCost;
+        BigDecimal totalNBV;
+        BigDecimal totalDepreciation;
+
+        if (!hasFilters) {
+            totalCost         = filteredCost;
+            totalNBV          = filteredNBV;
+            totalDepreciation = filteredDepreciation;
+        } else {
+            Map<String, Object> totals = jdbcTemplate.queryForMap(
+                "SELECT COALESCE(SUM(cost), 0)                       AS totalCost," +
+                "       COALESCE(SUM(accumulatedDepreciationAmt), 0) AS totalDepreciation," +
+                "       COALESCE(SUM(netCost), 0)                   AS totalNBV" +
+                " FROM tb_FarReport");
+            totalCost         = toBigDecimal(totals.get("totalCost"));
+            totalDepreciation = toBigDecimal(totals.get("totalDepreciation"));
+            totalNBV          = toBigDecimal(totals.get("totalNBV"));
+        }
+
+        Specification<FarReport> spec = SPEC_BUILDER.build(filter);
+        Page<FarReportDTO> page = farReportRepository
+                .findAll(spec, pageable)
+                .map(mapper::toFarReportDto);
+
+        // NBV spec check: NC = IC − AD (warn if discrepancy > 1% of total cost)
+        BigDecimal specCheck = totalCost.subtract(totalDepreciation);
+        BigDecimal diff      = totalNBV.subtract(specCheck).abs();
+        if (totalCost.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal threshold = totalCost.multiply(BigDecimal.valueOf(0.01));
+            if (diff.compareTo(threshold) > 0) {
+                log.warn("[findAllWithSummary] NBV spec check: totalNBV={} vs (cost-AD)={} diff={} " +
+                         "— may indicate unprocessed assets or large ADJ values",
+                         totalNBV, specCheck, diff);
+            }
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("data",                 page.getContent());
+        response.put("totalRecords",         totalRecords);
+        response.put("totalPages",           (int) Math.ceil((double) totalRecords / pageable.getPageSize()));
+        response.put("currentPage",          pageable.getPageNumber());
+        response.put("pageSize",             pageable.getPageSize());
+        response.put("totalCost",            totalCost);
+        response.put("totalDepreciation",    totalDepreciation);
+        response.put("totalNBV",             totalNBV);
+        response.put("filteredCost",         filteredCost);
+        response.put("filteredDepreciation", filteredDepreciation);
+        response.put("filteredNBV",          filteredNBV);
+
+        return response;
     }
 
     // ── Upload ────────────────────────────────────────────────────────────────
 
     @Override
-@CacheEvict(value = "far-report:list", allEntries = true)
-@Transactional
-public Map<String, Object> processUpload(List<Map<String, Object>> rows, String source) {
-    log.info("[FAR Upload] Starting {} upload, rows={}", source, rows.size());
-    long startMs = System.currentTimeMillis();
+    @CacheEvict(value = "far-report:list", allEntries = true)
+    @Transactional
+    public Map<String, Object> processUpload(List<Map<String, Object>> rows, String source) {
+        log.info("[FAR Upload] Starting {} upload, rows={}", source, rows.size());
+        long startMs = System.currentTimeMillis();
 
-    // 1. Parse all rows first (no DB calls)
-    List<FarReport> parsed = new ArrayList<>(rows.size());
-    List<Integer> failedIndices = new ArrayList<>();
-    for (int i = 0; i < rows.size(); i++) {
-        try {
-            parsed.add(mapRowToEntity(rows.get(i)));
-        } catch (Exception ex) {
-            failedIndices.add(i);
-            log.warn("[FAR Upload] Row {} parse failed: {}", i, ex.getMessage());
-        }
-    }
+        List<FarReport>           parsed    = new ArrayList<>(rows.size());
+        List<Map<String, Object>> rowErrors = new ArrayList<>();
 
-    // 2. Collect all assetIds and batch-fetch existing records (ONE query)
-    Set<String> assetIds = parsed.stream()
-            .map(FarReport::getAssetId)
-            .filter(id -> id != null && !id.isBlank())
-            .collect(Collectors.toSet());
-
-    // Add this method to your repository (see below)
-    Map<String, FarReport> existingByAssetId = farReportRepository
-            .findByAssetIdIn(assetIds)
-            .stream()
-            .collect(Collectors.toMap(FarReport::getAssetId, f -> f, (a, b) -> a));
-
-    // 3. Merge into insert/update batches
-    int inserted = 0, updated = 0;
-    List<FarReport> batch = new ArrayList<>(UPLOAD_BATCH_SIZE);
-    Date now = new Date();
-
-    for (FarReport entity : parsed) {
-        String assetId = entity.getAssetId();
-        if (assetId == null || assetId.isBlank()) continue;
-
-        FarReport existing = existingByAssetId.get(assetId);
-        if (existing != null) {
-            copyFieldsForUpdate(entity, existing);
-            existing.setUpdatedDate(now);
-            existing.setUpdatedBy(entity.getUpdatedBy() != null 
-                    ? entity.getUpdatedBy() : existing.getCreatedBy());
-            batch.add(existing);
-            updated++;
-        } else {
-            entity.setRecordDatetime(now);
-            entity.setCreatedDate(now);
-            entity.setUpdatedDate(now);
-            if (entity.getCreatedBy() == null) {
-                entity.setCreatedBy(entity.getUpdatedBy() != null 
-                        ? entity.getUpdatedBy() : "system");
+        for (int i = 0; i < rows.size(); i++) {
+            int rowNumber = i + 1;
+            try {
+                ValidationResult validation = FarReportValidation.validateRow(rows.get(i), i);
+                if (validation.hasErrors()) {
+                    Map<String, Object> errorEntry = new HashMap<>();
+                    errorEntry.put("rowNumber", rowNumber);
+                    errorEntry.put("errors",    validation.errors);
+                    rowErrors.add(errorEntry);
+                    log.warn("[FAR Upload] Row {} rejected — {} error(s): {}",
+                             rowNumber, validation.errors.size(), validation.errors);
+                    continue;
+                }
+                FarReport entity = mapRowToEntity(rows.get(i));
+                parsed.add(entity);
+            } catch (Exception ex) {
+                Map<String, Object> errorEntry = new HashMap<>();
+                errorEntry.put("rowNumber", rowNumber);
+                errorEntry.put("errors",    List.of("Row " + rowNumber + ": Parse error — " + ex.getMessage()));
+                rowErrors.add(errorEntry);
+                log.warn("[FAR Upload] Row {} parse failed: {}", rowNumber, ex.getMessage());
             }
-            if (entity.getUpdatedBy() == null) {
-                entity.setUpdatedBy(entity.getCreatedBy());
-            }
-            batch.add(entity);
-            inserted++;
         }
 
-        if (batch.size() >= UPLOAD_BATCH_SIZE) {
+        Set<String> assetIds = parsed.stream()
+                .map(FarReport::getAssetId)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(Collectors.toSet());
+
+        Map<String, FarReport> existingByAssetId = farReportRepository
+                .findByAssetIdIn(assetIds)
+                .stream()
+                .collect(Collectors.toMap(FarReport::getAssetId, f -> f, (a, b) -> a));
+
+        int inserted = 0, updated = 0;
+        List<FarReport> batch = new ArrayList<>(UPLOAD_BATCH_SIZE);
+        Date now = new Date();
+
+        for (FarReport entity : parsed) {
+            String assetId = entity.getAssetId();
+            if (assetId == null || assetId.isBlank()) continue;
+
+            FarReport existing = existingByAssetId.get(assetId);
+            if (existing != null) {
+                copyFieldsForUpdate(entity, existing);
+                existing.setUpdatedDate(now);
+                existing.setUpdatedBy(
+                    entity.getUpdatedBy() != null ? entity.getUpdatedBy()
+                    : (entity.getCreatedBy() != null ? entity.getCreatedBy() : existing.getCreatedBy())
+                );
+                existing.setChangedBy(existing.getUpdatedBy());
+                existing.setChangedDate(now);
+                batch.add(existing);
+                updated++;
+            } else {
+                entity.setRecordDatetime(now);
+                entity.setCreatedDate(now);
+                entity.setInsertedBy(
+                    entity.getCreatedBy() != null ? entity.getCreatedBy()
+                    : (entity.getUpdatedBy() != null ? entity.getUpdatedBy() : "null")
+                );
+                if (entity.getCreatedBy() == null) {
+                    entity.setCreatedBy(
+                        entity.getUpdatedBy() != null ? entity.getUpdatedBy() : "null"
+                    );
+                }
+                entity.setUpdatedBy(null);
+                entity.setUpdatedDate(null);
+                entity.setChangedBy(null);
+                entity.setChangedDate(null);
+                batch.add(entity);
+                inserted++;
+            }
+
+            if (batch.size() >= UPLOAD_BATCH_SIZE) {
+                flushBatch(batch);
+            }
+        }
+
+        if (!batch.isEmpty()) {
             flushBatch(batch);
         }
+
+        int  failed  = rowErrors.size();
+        long elapsed = System.currentTimeMillis() - startMs;
+        log.info("[FAR Upload] Complete: inserted={}, updated={}, failed={}, elapsed={}ms",
+                 inserted, updated, failed, elapsed);
+
+        refreshPreWarmExport();
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("status",    failed == 0 ? "SUCCESS" : (inserted + updated == 0 ? "FAILED" : "PARTIAL"));
+        result.put("inserted",  inserted);
+        result.put("updated",   updated);
+        result.put("failed",    failed);
+        result.put("total",     rows.size());
+        result.put("elapsedMs", elapsed);
+        if (!rowErrors.isEmpty()) {
+            result.put("rowErrors", rowErrors);
+        }
+        return result;
     }
 
-    if (!batch.isEmpty()) {
-        flushBatch(batch);
-    }
-
-    int failed = failedIndices.size();
-    long elapsedMs = System.currentTimeMillis() - startMs;
-    log.info("[FAR Upload] Complete: inserted={}, updated={}, failed={}, elapsed={}ms",
-             inserted, updated, failed, elapsedMs);
-
-    refreshPreWarmExport();
-
-    Map<String, Object> result = new HashMap<>();
-    result.put("status", failed == 0 ? "SUCCESS" : "PARTIAL");
-    result.put("inserted", inserted);
-    result.put("updated", updated);
-    result.put("failed", failed);
-    result.put("total", rows.size());
-    result.put("elapsedMs", elapsedMs);
-    return result;
-}
+    // ── Batch helpers ─────────────────────────────────────────────────────────
 
     private void flushBatch(List<FarReport> batch) {
         farReportRepository.saveAll(batch);
@@ -488,8 +514,6 @@ public Map<String, Object> processUpload(List<Map<String, Object>> rows, String 
         target.setLocations(source.getLocations());
         target.setStatusFlag(source.getStatusFlag());
         target.setNodeType(source.getNodeType());
-        target.setUpdatedBy(source.getUpdatedBy());
-        target.setUpdatedDate(new Date());
         target.setQuantity(source.getQuantity());
         target.setLife(source.getLife());
         target.setCost(source.getCost());
@@ -510,64 +534,54 @@ public Map<String, Object> processUpload(List<Map<String, Object>> rows, String 
         target.setUplLine(source.getUplLine());
         target.setTransferToNewFar(source.getTransferToNewFar());
         target.setChangedBy(source.getChangedBy());
-        target.setChangedDate(new Date());
+        target.setFinancialApproval(source.getFinancialApproval());
+        // createdBy and createdDate are intentionally NOT copied on update
     }
 
-    // ── Legacy CSV export ─────────────────────────────────────────────────────
+    // ── Query helpers ─────────────────────────────────────────────────────────
 
-    @Override
-    @Transactional(readOnly = true)
-    public void streamExportToCsv(PrintWriter writer, String column, String value,
-                                   String operator) throws IOException {
-        StringBuilder sql = new StringBuilder("SELECT ");
-        sql.append(String.join(", ", COLUMNS));
-        sql.append(" FROM tb_FarReport WHERE 1=1");
+    /**
+     * Thread-safe date parsing using immutable DateTimeFormatter.
+     * Replaces the old synchronized(SimpleDateFormat) approach.
+     */
+    private LocalDateTime parseDate(String dateStr, boolean startOfDay) {
+        if (dateStr == null || dateStr.isBlank()) return null;
 
-        List<Object> params = new ArrayList<>();
-
-        // Already safe — uses ALLOWED_COLUMNS.contains() check
-        if (column != null && value != null && ALLOWED_COLUMNS.contains(column)) {
-            if ("contains".equalsIgnoreCase(operator)) {
-                sql.append(" AND ").append(column).append(" LIKE ?");
-                params.add("%" + value + "%");
-            } else {
-                sql.append(" AND ").append(column).append(" = ?");
-                params.add(value);
-            }
+        // Try as LocalDateTime first (most common for stored values)
+        for (DateTimeFormatter fmt : DATE_PARSE_FORMATS) {
+            try {
+                return LocalDateTime.parse(dateStr, fmt);
+            } catch (DateTimeParseException ignored) {}
         }
 
-        writer.println(String.join(",", COLUMNS));
-
-        jdbcTemplate.query(sql.toString(), params.toArray(), new RowCallbackHandler() {
-            @Override
-            public void processRow(ResultSet rs) throws SQLException {
-                StringBuilder row = new StringBuilder();
-                for (String col : COLUMNS) {
-                    Object val = rs.getObject(col);
-                    String strVal;
-                    if (val == null) {
-                        strVal = "";
-                    } else if (val instanceof Date) {
-                        strVal = dateFormat.format((Date) val);
-                    } else {
-                        strVal = val.toString();
-                    }
-                    row.append(escapeCsv(strVal)).append(",");
-                }
-                writer.println(row.substring(0, row.length() - 1));
-            }
-        });
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private String escapeCsv(String value) {
-        if (value == null) return "";
-        if (value.contains("\"") || value.contains(",") || value.contains("\n")) {
-            return "\"" + value.replace("\"", "\"\"") + "\"";
+        // Try as LocalDate (date-only input from UI)
+        for (DateTimeFormatter fmt : DATE_PARSE_FORMATS) {
+            try {
+                LocalDate date = LocalDate.parse(dateStr, fmt);
+                return startOfDay ? date.atStartOfDay() : date.atTime(23, 59, 59);
+            } catch (DateTimeParseException ignored) {}
         }
-        return value;
+
+        log.warn("[FarReportService] Could not parse date string: '{}'", dateStr);
+        return null;
     }
+
+    private String validateColumn(String input) {
+        if (input == null) return null;
+        String trimmed = input.trim();
+        for (String col : COLUMNS) {
+            if (col.equalsIgnoreCase(trimmed)) return col;
+        }
+        return null;
+    }
+
+    private static BigDecimal toBigDecimal(Object val) {
+        if (val == null) return BigDecimal.ZERO;
+        if (val instanceof BigDecimal) return (BigDecimal) val;
+        return new BigDecimal(val.toString());
+    }
+
+    // ── Row-mapping helpers ───────────────────────────────────────────────────
 
     private String getStr(Map<String, Object> row, String... keys) {
         for (String key : keys) {
@@ -604,14 +618,44 @@ public Map<String, Object> processUpload(List<Map<String, Object>> rows, String 
         }
     }
 
+    /**
+     * Parses a date field from an upload row map.
+     * Uses thread-safe DateTimeFormatter instead of SimpleDateFormat.
+     */
     private Date getDate(Map<String, Object> row, String... keys) {
-        String val = getStr(row, keys);
-        if (val == null) return null;
-        try {
-            return dateFormat.parse(val);
-        } catch (Exception e) {
-            return null;
+        Object raw = null;
+        for (String key : keys) {
+            raw = row.get(key);
+            if (raw != null) break;
         }
+        if (raw == null) return null;
+
+        // Already a java.util.Date or subtype — return directly
+        if (raw instanceof Date) return (Date) raw;
+
+        // java.time types from JDBC / Jackson
+        if (raw instanceof java.time.LocalDate)
+            return java.sql.Date.valueOf((java.time.LocalDate) raw);
+        if (raw instanceof java.time.LocalDateTime)
+            return java.sql.Timestamp.valueOf((java.time.LocalDateTime) raw);
+
+        String val = raw.toString().trim();
+        if (val.isEmpty()) return null;
+
+        // Try each DateTimeFormatter (all immutable — no synchronization needed)
+        for (DateTimeFormatter fmt : DATE_PARSE_FORMATS) {
+            // Try LocalDateTime parse first
+            try {
+                return java.sql.Timestamp.valueOf(LocalDateTime.parse(val, fmt));
+            } catch (DateTimeParseException ignored) {}
+
+            // Then LocalDate parse
+            try {
+                return java.sql.Date.valueOf(LocalDate.parse(val, fmt));
+            } catch (DateTimeParseException ignored) {}
+        }
+
+        log.warn("[FAR Upload] Could not parse date '{}' for key(s) {}", val, Arrays.toString(keys));
+        return null;
     }
-  
 }

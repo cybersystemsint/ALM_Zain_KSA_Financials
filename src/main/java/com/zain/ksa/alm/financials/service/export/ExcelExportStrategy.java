@@ -116,8 +116,6 @@ public class ExcelExportStrategy<T> implements ExportStrategy<T> {
         Font font = workbook.createFont();
         font.setBold(true);
         style.setFont(font);
-        style.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
-        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
         return style;
     }
 
