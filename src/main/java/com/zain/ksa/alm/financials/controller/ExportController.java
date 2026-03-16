@@ -141,8 +141,8 @@ public class ExportController {
                 int read;
                 while ((read = in.read(buf)) != -1) {
                     out.write(buf, 0, read);
+                    out.flush(); // periodic flush keeps connection alive through proxies
                 }
-                out.flush();
             } catch (IOException e) {
                 log.warn("[Export] Client disconnected during plain download: {}", e.getMessage());
             }
@@ -153,6 +153,7 @@ public class ExportController {
                 .contentLength(fileSize)
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(fileName))
                 .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .header("X-Accel-Buffering", "no")
                 .body(body);
     }
 
@@ -172,15 +173,18 @@ public class ExportController {
 
         StreamingResponseBody body = out -> {
             byte[] buf = new byte[COPY_BUFFER_SIZE];
-            // Level 1 = fastest compression; good ratio for structured text data
-            try (InputStream  in   = new BufferedInputStream(new FileInputStream(file), COPY_BUFFER_SIZE);
-                 GZIPOutputStream gz = new GZIPOutputStream(out, COPY_BUFFER_SIZE) {{
-                     // Set compression level via reflection-free approach
+            // syncFlush=true: each write() immediately flushes compressed bytes to the socket.
+            // Without this (default syncFlush=false), the Deflater holds data in its internal
+            // buffer until full — meaning zero bytes reach the socket for minutes on large files,
+            // which causes proxies/load balancers to close the idle connection.
+            try (InputStream     in = new BufferedInputStream(new FileInputStream(file), COPY_BUFFER_SIZE);
+                 GZIPOutputStream gz = new GZIPOutputStream(out, COPY_BUFFER_SIZE, true) {{
                      def.setLevel(java.util.zip.Deflater.BEST_SPEED);
                  }}) {
                 int read;
                 while ((read = in.read(buf)) != -1) {
                     gz.write(buf, 0, read);
+                    gz.flush(); // push buffered compressed bytes to socket immediately
                 }
                 gz.finish();
             } catch (IOException e) {
@@ -192,6 +196,7 @@ public class ExportController {
                 .contentType(MediaType.parseMediaType(contentType))
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(fileName))
                 .header(HttpHeaders.CONTENT_ENCODING, "gzip")
+                .header("X-Accel-Buffering", "no") // tell nginx not to buffer this streaming response
                 // No Content-Length — size is unknown until compression finishes
                 .body(body);
     }
