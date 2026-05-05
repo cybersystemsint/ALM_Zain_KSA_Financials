@@ -72,40 +72,42 @@ public class ExportExecutor {
     // FAR REPORT COLUMNS
     // ══════════════════════════════════════════════════════════════════════════
 
-    private static final String[] FAR_COLUMNS = {
-        "book", "assetId", "quantity",
-        "description", "creationDate", "serialNumber", "tagNumber",
-        "picStatus", "picDate", "cipDeliveryDate", "linkId", "acceptanceNumber",
-        "depreciateFlag", "cipEu", "invoiceNumber", "poNumber", "poLineNumber",
-        "uplLine", "transferToNewFar", "assetStatus", "partNumber",
-        "vendorName", "vendorNumber", "mergedCode", "costAccount",
-        "cipCostAccount", "expenseCostCenter",
-        "expenseAccount", "Life", "datePlacedInService", "cost", "nbv",
-        "depreciationAmount", "ytdDepreciation", "depreciationReserve",
-        "salvageValue", "category", "categoryDescription",
-        "locationSegment1", "locationSegment2", "locationSegment3", "locationSegment4", "locations",
-        "createdBy", "createdDate", "updatedBy", "updatedDate",
-        "monthlyDepreciationAmt", "depreciationDate", "netCost",
-        "statusFlag", "financialApproval", "nodeType"
-    };
+private static final String[] FAR_COLUMNS = {
+    "book", "assetId", "quantity",
+    "description", "creationDate", "serialNumber", "tagNumber",
+    "picStatus", "picDate", "cipDeliveryDate", "linkId", "acceptanceNumber",
+    "depreciateFlag", "cipEu", "invoiceNumber", "poNumber", "poLineNumber",
+    "uplLine", "transferToNewFar", "assetStatus", "partNumber",
+    "vendorName", "vendorNumber", "mergedCode", "costAccount",
+    "cipCostAccount", "expenseCostCenter",
+    "expenseAccount", "Life", "datePlacedInService", "cost", "nbv",
+    "depreciationAmount", "ytdDepreciation", "depreciationReserve",
+    "salvageValue", "category", "categoryDescription",
+    "locationSegment1", "locationSegment2", "locationSegment3", "locationSegment4", "locations",
+    "createdBy", "createdDate", "updatedBy", "updatedDate",
+    "monthlyDepreciationAmt", "depreciationDate", "netCost",
+    "statusFlag", "financialApproval", "nodeType",
+    "mapped"           
+};
 
-    private static final String[] FAR_HEADERS = {
-        "Book", "Asset ID", "Quantity",
-        "Description", "Creation Date", "Serial Number", "Tag Number",
-        "PIC Status", "PIC Date", "CIP Delivery Date", "Link ID", "Acceptance Number",
-        "Depreciate Flag", "CIP EU", "Invoice Number", "PO Number", "PO Line Number",
-        "UPL Line", "Transfer To New FAR", "Asset Status", "Part Number",
-        "Vendor Name", "Vendor Number", "Merged Code", "Cost Account",
-        "CIP Cost Account", "Expense Cost Center",
-        "Expense Account", "Life", "Date Placed In Service", "Cost", "NBV",
-        "Depreciation Amount", "YTD Depreciation", "Depreciation Reserve",
-        "Salvage Value", "Category", "Category Description",
-        "Location Segment 1", "Location Segment 2", "Location Segment 3", "Location Segment 4", "Locations",
-        "Created By", "Created Date", "Updated By", "Updated Date",
-        "Monthly Depreciation Amt", "Depreciation Date", "Net Cost",
-        "Status Flag", "Financial Approval", "Node Type"
-    };
 
+private static final String[] FAR_HEADERS = {
+    "Book", "Asset ID", "Quantity",
+    "Description", "Creation Date", "Serial Number", "Tag Number",
+    "PIC Status", "PIC Date", "CIP Delivery Date", "Link ID", "Acceptance Number",
+    "Depreciate Flag", "CIP EU", "Invoice Number", "PO Number", "PO Line Number",
+    "UPL Line", "Transfer To New FAR", "Asset Status", "Part Number",
+    "Vendor Name", "Vendor Number", "Merged Code", "Cost Account",
+    "CIP Cost Account", "Expense Cost Center",
+    "Expense Account", "Life", "Date Placed In Service", "Cost", "NBV",
+    "Depreciation Amount", "YTD Depreciation", "Depreciation Reserve",
+    "Salvage Value", "Category", "Category Description",
+    "Location Segment 1", "Location Segment 2", "Location Segment 3", "Location Segment 4", "Locations",
+    "Created By", "Created Date", "Updated By", "Updated Date",
+    "Monthly Depreciation Amt", "Depreciation Date", "Net Cost",
+    "Status Flag", "Financial Approval", "Node Type",
+    "Mapped"
+};
     private static final Set<String> FAR_DATE_COLUMNS = Set.of(
         "creationDate", "picDate", "cipDeliveryDate",
         "datePlacedInService", "createdDate", "updatedDate", "depreciationDate"
@@ -124,52 +126,57 @@ public class ExportExecutor {
     // ══════════════════════════════════════════════════════════════════════════
     // DEPRECIATION COLUMNS
     // ══════════════════════════════════════════════════════════════════════════
+private static final String[] DEP_COLUMNS = {
+    "d.recordNo", "d.depreciationPeriod", "d.monthlyDepreciationAmt",
+    "d.accumulatedDepreciationAmt", "d.netCost", "d.depreciationDate",
+    "d.assetId",
+    "f.mapped",       
+    "f.book", "f.description", "f.serialNumber", "f.assetType",
+    "f.category", "f.categoryDescription", "f.cost", "f.salvageValue",
+    "f.Life", "f.datePlacedInService", "f.costAccount",
+    "f.accumulatedDepreAccount", "f.expenseAccount",
+    "f.quantity", "f.value",
+    "d.createdBy", "d.changedBy", "d.recordDatetime"
+};
+private static final String[] DEP_OUTPUT_COLUMNS = {
+    "recordNo", "depreciationPeriod", "monthlyDepreciationAmt",
+    "accumulatedDepreciationAmt", "netCost", "depreciationDate",
+    "assetId",
+    "mapped",    
+    "book", "description", "serialNumber", "assetType",
+    "category", "categoryDescription", "cost", "salvageValue",
+    "life", "datePlacedInService", "costAccount",
+    "accumulatedDepreAccount", "expenseAccount",
+    "quantity", "value",
+    "createdBy", "changedBy", "recordDatetime"
+};
 
-    private static final String[] DEP_COLUMNS = {
-        "d.recordNo", "d.depreciationPeriod", "d.monthlyDepreciationAmt",
-        "d.accumulatedDepreciationAmt", "d.netCost", "d.depreciationDate",
-        "d.assetId", "f.book", "f.description", "f.serialNumber", "f.assetType",
-        "f.category", "f.categoryDescription", "f.cost", "f.salvageValue",
-        "f.Life", "f.datePlacedInService", "f.costAccount",
-        "f.accumulatedDepreAccount", "f.expenseAccount",
-        "f.quantity", "f.value",
-        "d.createdBy", "d.changedBy", "d.recordDatetime"
-    };
-
-    private static final String[] DEP_OUTPUT_COLUMNS = {
-        "recordNo", "depreciationPeriod", "monthlyDepreciationAmt",
-        "accumulatedDepreciationAmt", "netCost", "depreciationDate",
-        "assetId", "book", "description", "serialNumber", "assetType",
-        "category", "categoryDescription", "cost", "salvageValue",
-        "life", "datePlacedInService", "costAccount",
-        "accumulatedDepreAccount", "expenseAccount",
-        "quantity", "value",
-        "createdBy", "changedBy", "recordDatetime"
-    };
-
-    private static final String[] DEP_HEADERS = {
-        "Record No", "Depreciation Period", "Monthly Depreciation Amt",
-        "Accumulated Depreciation Amt", "Net Cost", "Depreciation Date",
-        "Asset ID", "Book", "Description", "Serial Number", "Asset Type",
-        "Category", "Category Description", "Cost", "Salvage Value",
-        "Life", "Date Placed In Service", "Cost Account",
-        "Accumulated Depre Account", "Expense Account",
-        "Quantity", "Value",
-        "Created By", "Changed By", "Record Datetime"
-    };
+private static final String[] DEP_HEADERS = {
+    "Record No", "Depreciation Period", "Monthly Depreciation Amt",
+    "Accumulated Depreciation Amt", "Net Cost", "Depreciation Date",
+    "Asset ID",
+    "Mapped",       
+    "Book", "Description", "Serial Number", "Asset Type",
+    "Category", "Category Description", "Cost", "Salvage Value",
+    "Life", "Date Placed In Service", "Cost Account",
+    "Accumulated Depre Account", "Expense Account",
+    "Quantity", "Value",
+    "Created By", "Changed By", "Record Datetime"
+};
 
     private static final Set<String> DEP_DATE_COLUMNS    = Set.of("depreciationDate", "datePlacedInService", "recordDatetime");
     private static final Set<String> DEP_NUMERIC_COLUMNS = Set.of("monthlyDepreciationAmt", "accumulatedDepreciationAmt", "netCost", "cost", "salvageValue", "value");
     private static final Set<String> DEP_INTEGER_COLUMNS = Set.of("recordNo", "life", "quantity");
 
-    private static final Set<String> DEP_ALLOWED_COLUMNS;
-    static {
-        DEP_ALLOWED_COLUMNS = new HashSet<>(Arrays.asList(
-            "recordNo", "recordDatetime", "assetId", "depreciationPeriod",
-            "monthlyDepreciationAmt", "accumulatedDepreciationAmt", "netCost",
-            "depreciationDate", "createdBy", "changedBy"
-        ));
-    }
+private static final Set<String> DEP_ALLOWED_COLUMNS;
+static {
+    DEP_ALLOWED_COLUMNS = new HashSet<>(Arrays.asList(
+        "recordNo", "recordDatetime", "assetId", "depreciationPeriod",
+        "monthlyDepreciationAmt", "accumulatedDepreciationAmt", "netCost",
+        "depreciationDate", "createdBy", "changedBy"
+
+    ));
+}
 
     // ══════════════════════════════════════════════════════════════════════════
     // UNMAPPED ACTIVE

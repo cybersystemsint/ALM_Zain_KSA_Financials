@@ -37,28 +37,7 @@ import com.zain.ksa.alm.financials.service.validation.FarReportValidation;
 import com.zain.ksa.alm.financials.service.validation.FarReportValidation.ValidationResult;
 
 /**
- * Production-ready FAR report service.
- *
- * ── Changes from previous version ───────────────────────────────────────────
- *
- *  ① SimpleDateFormat REMOVED everywhere.
- *    SimpleDateFormat is not thread-safe. Under concurrent exports it produced
- *    garbled / swapped date values silently. All date formatting now uses
- *    thread-safe java.time.format.DateTimeFormatter (immutable, stateless).
- *
- *  ② streamExportToCsv() REMOVED.
- *    This legacy method had no JDBC fetch-size cursor set, meaning for large
- *    tables the full result set was loaded into heap before writing. It was
- *    also dead code — the controller routes all exports through ExportJobService
- *    → ExportExecutor → FileExportStrategy. Keeping it created a maintenance
- *    trap and a latent OOM risk.
- *
- *  ③ DATE_FORMATS list — synchronized(fmt) blocks REPLACED.
- *    The old list used synchronized(fmt) on each SimpleDateFormat as a
- *    workaround for thread-unsafety. The new implementation uses a list of
- *    DateTimeFormatter instances (truly immutable) with no synchronization.
- *
- *  ④ Everything else is unchanged — upload, findAllWithSummary, CRUD, cache.
+ * FAR report service.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 @Service
@@ -97,7 +76,7 @@ public class FarReportServiceImpl implements FarReportService {
         "locationSegment1", "locationSegment2", "locationSegment3", "locationSegment4", "locations",
         "createdBy", "createdDate", "updatedBy", "updatedDate",
         "monthlyDepreciationAmt", "depreciationDate", "netCost",
-        "statusFlag", "financialApproval", "nodeType"
+        "statusFlag", "financialApproval", "nodeType","mapped"   
     };
 
     private static final Set<String> ALLOWED_COLUMNS = new HashSet<>(Arrays.asList(COLUMNS));
@@ -221,12 +200,23 @@ public class FarReportServiceImpl implements FarReportService {
 
        boolean hasFilters = params.size() > 0;
 
-        String aggregateSql =
-            "SELECT COUNT(*) AS cnt," +
-            "  COALESCE(SUM(cost), 0)                       AS filteredCost," +
-            "  COALESCE(SUM(accumulatedDepreciationAmt), 0) AS filteredDepreciation," +
-            "  COALESCE(SUM(netCost), 0)                    AS filteredNBV" +
-            " FROM tb_FarReport" + where;
+String aggregateSql =
+    "SELECT COUNT(*) AS cnt," +
+    "  COALESCE(SUM(cost), 0) AS filteredCost," +
+    "  COALESCE(SUM(" +
+    "    CASE WHEN accumulatedDepreciationAmt IS NOT NULL AND accumulatedDepreciationAmt > 0" +
+    "         THEN accumulatedDepreciationAmt" +
+    "         WHEN depreciationReserve IS NOT NULL" +
+    "         THEN depreciationReserve" +
+    "         ELSE 0 END" +
+    "  ), 0) AS filteredDepreciation," +
+    "  COALESCE(SUM(" +
+    "    CASE WHEN netCost IS NOT NULL THEN netCost" +
+    "         WHEN depreciationReserve IS NOT NULL AND cost IS NOT NULL" +
+    "         THEN cost - depreciationReserve" +
+    "         ELSE COALESCE(cost, 0) END" +
+    "  ), 0) AS filteredNBV" +
+    " FROM tb_FarReport" + where;
 
         Map<String, Object> agg = jdbcTemplate.queryForMap(aggregateSql, params.toArray());
 
@@ -244,11 +234,23 @@ public class FarReportServiceImpl implements FarReportService {
             totalNBV          = filteredNBV;
             totalDepreciation = filteredDepreciation;
         } else {
-            Map<String, Object> totals = jdbcTemplate.queryForMap(
-                "SELECT COALESCE(SUM(cost), 0)                       AS totalCost," +
-                "       COALESCE(SUM(accumulatedDepreciationAmt), 0) AS totalDepreciation," +
-                "       COALESCE(SUM(netCost), 0)                   AS totalNBV" +
-                " FROM tb_FarReport");
+
+Map<String, Object> totals = jdbcTemplate.queryForMap(
+    "SELECT COALESCE(SUM(cost), 0) AS totalCost," +
+    "  COALESCE(SUM(" +
+    "    CASE WHEN accumulatedDepreciationAmt IS NOT NULL AND accumulatedDepreciationAmt > 0" +
+    "         THEN accumulatedDepreciationAmt" +
+    "         WHEN depreciationReserve IS NOT NULL" +
+    "         THEN depreciationReserve" +
+    "         ELSE 0 END" +
+    "  ), 0) AS totalDepreciation," +
+    "  COALESCE(SUM(" +
+    "    CASE WHEN netCost IS NOT NULL THEN netCost" +
+    "         WHEN depreciationReserve IS NOT NULL AND cost IS NOT NULL" +
+    "         THEN cost - depreciationReserve" +
+    "         ELSE COALESCE(cost, 0) END" +
+    "  ), 0) AS totalNBV" +
+    " FROM tb_FarReport");
             totalCost         = toBigDecimal(totals.get("totalCost"));
             totalDepreciation = toBigDecimal(totals.get("totalDepreciation"));
             totalNBV          = toBigDecimal(totals.get("totalNBV"));
@@ -259,17 +261,6 @@ public class FarReportServiceImpl implements FarReportService {
                 .findAll(spec, pageable)
                 .map(mapper::toFarReportDto);
 
-        // NBV spec check: NC = IC − AD (warn if discrepancy > 1% of total cost)
-        BigDecimal specCheck = totalCost.subtract(totalDepreciation);
-        BigDecimal diff      = totalNBV.subtract(specCheck).abs();
-        if (totalCost.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal threshold = totalCost.multiply(BigDecimal.valueOf(0.01));
-            if (diff.compareTo(threshold) > 0) {
-                log.warn("[findAllWithSummary] NBV spec check: totalNBV={} vs (cost-AD)={} diff={} " +
-                         "— may indicate unprocessed assets or large ADJ values",
-                         totalNBV, specCheck, diff);
-            }
-        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("data",                 page.getContent());
@@ -289,119 +280,135 @@ public class FarReportServiceImpl implements FarReportService {
 
     // ── Upload ────────────────────────────────────────────────────────────────
 
-    @Override
-    @CacheEvict(value = "far-report:list", allEntries = true)
-    @Transactional
-    public Map<String, Object> processUpload(List<Map<String, Object>> rows, String source) {
-        log.info("[FAR Upload] Starting {} upload, rows={}", source, rows.size());
-        long startMs = System.currentTimeMillis();
+@Override
+@CacheEvict(value = "far-report:list", allEntries = true)
+@Transactional
+public Map<String, Object> processUpload(List<Map<String, Object>> rows, String source) {
+    log.info("[FAR Upload] Starting {} upload, rows={}", source, rows.size());
+    long startMs = System.currentTimeMillis();
 
-        List<FarReport>           parsed    = new ArrayList<>(rows.size());
-        List<Map<String, Object>> rowErrors = new ArrayList<>();
+    List<FarReport>           parsed    = new ArrayList<>(rows.size());
+    List<Map<String, Object>> rowErrors = new ArrayList<>();
 
-        for (int i = 0; i < rows.size(); i++) {
-            int rowNumber = i + 1;
-            try {
-                ValidationResult validation = FarReportValidation.validateRow(rows.get(i), i);
-                if (validation.hasErrors()) {
-                    Map<String, Object> errorEntry = new HashMap<>();
-                    errorEntry.put("rowNumber", rowNumber);
-                    errorEntry.put("errors",    validation.errors);
-                    rowErrors.add(errorEntry);
-                    log.warn("[FAR Upload] Row {} rejected — {} error(s): {}",
-                             rowNumber, validation.errors.size(), validation.errors);
-                    continue;
-                }
-                FarReport entity = mapRowToEntity(rows.get(i));
-                parsed.add(entity);
-            } catch (Exception ex) {
+    // ── Phase 1: validate ALL rows first, collect ALL errors ─────────────
+    for (int i = 0; i < rows.size(); i++) {
+        int rowNumber = i + 1;
+        try {
+            ValidationResult validation = FarReportValidation.validateRow(rows.get(i), i);
+            if (validation.hasErrors()) {
                 Map<String, Object> errorEntry = new HashMap<>();
                 errorEntry.put("rowNumber", rowNumber);
-                errorEntry.put("errors",    List.of("Row " + rowNumber + ": Parse error — " + ex.getMessage()));
+                errorEntry.put("errors",    validation.errors);
                 rowErrors.add(errorEntry);
-                log.warn("[FAR Upload] Row {} parse failed: {}", rowNumber, ex.getMessage());
+                log.warn("[FAR Upload] Row {} rejected — {} error(s): {}",
+                         rowNumber, validation.errors.size(), validation.errors);
+                continue;
             }
+            FarReport entity = mapRowToEntity(rows.get(i));
+            parsed.add(entity);
+        } catch (Exception ex) {
+            Map<String, Object> errorEntry = new HashMap<>();
+            errorEntry.put("rowNumber", rowNumber);
+            errorEntry.put("errors",    List.of("Row " + rowNumber + ": Parse error — " + ex.getMessage()));
+            rowErrors.add(errorEntry);
+            log.warn("[FAR Upload] Row {} parse failed: {}", rowNumber, ex.getMessage());
         }
+    }
 
-        Set<String> assetIds = parsed.stream()
-                .map(FarReport::getAssetId)
-                .filter(id -> id != null && !id.isBlank())
-                .collect(Collectors.toSet());
-
-        Map<String, FarReport> existingByAssetId = farReportRepository
-                .findByAssetIdIn(assetIds)
-                .stream()
-                .collect(Collectors.toMap(FarReport::getAssetId, f -> f, (a, b) -> a));
-
-        int inserted = 0, updated = 0;
-        List<FarReport> batch = new ArrayList<>(UPLOAD_BATCH_SIZE);
-        Date now = new Date();
-
-        for (FarReport entity : parsed) {
-            String assetId = entity.getAssetId();
-            if (assetId == null || assetId.isBlank()) continue;
-
-            FarReport existing = existingByAssetId.get(assetId);
-            if (existing != null) {
-                copyFieldsForUpdate(entity, existing);
-                existing.setUpdatedDate(now);
-                existing.setUpdatedBy(
-                    entity.getUpdatedBy() != null ? entity.getUpdatedBy()
-                    : (entity.getCreatedBy() != null ? entity.getCreatedBy() : existing.getCreatedBy())
-                );
-                existing.setChangedBy(existing.getUpdatedBy());
-                existing.setChangedDate(now);
-                batch.add(existing);
-                updated++;
-            } else {
-                entity.setRecordDatetime(now);
-                entity.setCreatedDate(now);
-                entity.setInsertedBy(
-                    entity.getCreatedBy() != null ? entity.getCreatedBy()
-                    : (entity.getUpdatedBy() != null ? entity.getUpdatedBy() : "null")
-                );
-                if (entity.getCreatedBy() == null) {
-                    entity.setCreatedBy(
-                        entity.getUpdatedBy() != null ? entity.getUpdatedBy() : "null"
-                    );
-                }
-                entity.setUpdatedBy(null);
-                entity.setUpdatedDate(null);
-                entity.setChangedBy(null);
-                entity.setChangedDate(null);
-                batch.add(entity);
-                inserted++;
-            }
-
-            if (batch.size() >= UPLOAD_BATCH_SIZE) {
-                flushBatch(batch);
-            }
-        }
-
-        if (!batch.isEmpty()) {
-            flushBatch(batch);
-        }
-
-        int  failed  = rowErrors.size();
-        long elapsed = System.currentTimeMillis() - startMs;
-        log.info("[FAR Upload] Complete: inserted={}, updated={}, failed={}, elapsed={}ms",
-                 inserted, updated, failed, elapsed);
-
-        refreshPreWarmExport();
+    // ── Phase 2: if ANY row failed validation, abort entirely ─────────────
+    if (!rowErrors.isEmpty()) {
+        int failed = rowErrors.size();
+        log.warn("[FAR Upload] Aborting — {} of {} rows failed validation, nothing saved",
+                 failed, rows.size());
 
         Map<String, Object> result = new HashMap<>();
-        result.put("status",    failed == 0 ? "SUCCESS" : (inserted + updated == 0 ? "FAILED" : "PARTIAL"));
-        result.put("inserted",  inserted);
-        result.put("updated",   updated);
+        result.put("status",    "FAILED");
+        result.put("inserted",  0);
+        result.put("updated",   0);
         result.put("failed",    failed);
         result.put("total",     rows.size());
-        result.put("elapsedMs", elapsed);
-        if (!rowErrors.isEmpty()) {
-            result.put("rowErrors", rowErrors);
-        }
+        result.put("elapsedMs", System.currentTimeMillis() - startMs);
+        result.put("rowErrors", rowErrors);
         return result;
     }
 
+    // ── Phase 3: all rows valid — now save (still inside @Transactional) ──
+    Set<String> assetIds = parsed.stream()
+            .map(FarReport::getAssetId)
+            .filter(id -> id != null && !id.isBlank())
+            .collect(Collectors.toSet());
+
+    Map<String, FarReport> existingByAssetId = farReportRepository
+            .findByAssetIdIn(assetIds)
+            .stream()
+            .collect(Collectors.toMap(FarReport::getAssetId, f -> f, (a, b) -> a));
+
+    int inserted = 0, updated = 0;
+    List<FarReport> batch = new ArrayList<>(UPLOAD_BATCH_SIZE);
+    Date now = new Date();
+
+    for (FarReport entity : parsed) {
+        String assetId = entity.getAssetId();
+        if (assetId == null || assetId.isBlank()) continue;
+
+        FarReport existing = existingByAssetId.get(assetId);
+        if (existing != null) {
+            copyFieldsForUpdate(entity, existing);
+            existing.setUpdatedDate(now);
+            existing.setUpdatedBy(
+                entity.getUpdatedBy() != null ? entity.getUpdatedBy()
+                : (entity.getCreatedBy() != null ? entity.getCreatedBy() : existing.getCreatedBy())
+            );
+            existing.setChangedBy(existing.getUpdatedBy());
+            existing.setChangedDate(now);
+            batch.add(existing);
+            updated++;
+        } else {
+            entity.setRecordDatetime(now);
+            entity.setCreatedDate(now);
+            entity.setInsertedBy(
+                entity.getCreatedBy() != null ? entity.getCreatedBy()
+                : (entity.getUpdatedBy() != null ? entity.getUpdatedBy() : "null")
+            );
+            if (entity.getCreatedBy() == null) {
+                entity.setCreatedBy(
+                    entity.getUpdatedBy() != null ? entity.getUpdatedBy() : "null"
+                );
+            }
+            entity.setUpdatedBy(null);
+            entity.setUpdatedDate(null);
+            entity.setChangedBy(null);
+            entity.setChangedDate(null);
+            batch.add(entity);
+            inserted++;
+        }
+
+        if (batch.size() >= UPLOAD_BATCH_SIZE) {
+            farReportRepository.saveAll(batch);  // NO flush/clear here — keep in transaction
+            batch.clear();
+        }
+    }
+
+    if (!batch.isEmpty()) {
+        farReportRepository.saveAll(batch);
+        batch.clear();
+    }
+
+    long elapsed = System.currentTimeMillis() - startMs;
+    log.info("[FAR Upload] Complete: inserted={}, updated={}, elapsed={}ms",
+             inserted, updated, elapsed);
+
+    refreshPreWarmExport();
+
+    Map<String, Object> result = new HashMap<>();
+    result.put("status",    "SUCCESS");
+    result.put("inserted",  inserted);
+    result.put("updated",   updated);
+    result.put("failed",    0);
+    result.put("total",     rows.size());
+    result.put("elapsedMs", elapsed);
+    return result;
+}
     // ── Batch helpers ─────────────────────────────────────────────────────────
 
     private void flushBatch(List<FarReport> batch) {

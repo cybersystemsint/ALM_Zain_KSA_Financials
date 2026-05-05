@@ -207,6 +207,9 @@ public class FarReport implements Serializable {
 	@Column(name = "updatedBy")
 	private String updatedBy;
 
+	@Column(name = "mapped")
+     private String mapped; 
+
 	public String getCreatedBy() {
 		return createdBy;
 	}
@@ -710,5 +713,12 @@ public class FarReport implements Serializable {
 	public void setNodeType(String nodeType) {
 		this.nodeType = nodeType;
 	}
-
+	
+    public String getMapped() {
+        return mapped;
+    }
+    
+    public void setMapped(String mapped) {
+        this.mapped = mapped;
+    }
 }

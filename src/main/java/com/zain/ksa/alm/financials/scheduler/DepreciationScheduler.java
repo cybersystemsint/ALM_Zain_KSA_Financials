@@ -38,28 +38,42 @@ import com.zain.ksa.alm.financials.service.impl.PreWarmExportJob;
  * │  MD   = (IC − SalvageValue) / L          [L = useful life in months] │
  * │  D    = 1st of the NEXT calendar month from Date of Service          │
  * │  NoMU = months between D and end-of-current-month (capped at L)      │
- * │  AD   = MD × NoMU + ADJ                                              │
+ * │  AD   = MD × NoMU                                                    │
  * │  NC   = IC − AD                                                      │
  * │                                                                      │
  * │  Constraints:                                                        │
  * │  • NC  ≥ SalvageValue  (never negative or below salvage)            │
  * │  • AD  ≤ (IC − SalvageValue)                                        │
- * │  • ADJ < IC at all times                                             │
  * │  • IC, MD, AD rounded to 3 decimal places                           │
  * │  • Stop computing when NC == SalvageValue                           │
+ * │                                                                      │
+ * │  NOTE: depreciationReserve (DEPRN_RESERVE) is intentionally excluded │
+ * │  from AD calculation. It represents the full historical accumulated  │
+ * │  depreciation imported from ERP — not a spec ADJ correction value.  │
+ * │  Including it in AD = MD × NoMU + ADJ caused massive double-counting │
+ * │  (~4.7bn excess depreciation on 3.1M assets).                       │
  * └──────────────────────────────────────────────────────────────────────┘
  * </pre>
  *
- * <p><b>Performance design:</b>
- * <ul>
- *   <li>Assets are fetched in pages of {@value #PAGE_SIZE} via JPA (read-only).</li>
- *   <li>Each page is split into chunks of {@value #BATCH_SIZE}.</li>
- *   <li>Per chunk: compute in-memory → single bulk upsert (DepreciationHistory)
- *       → single bulk update (FarReport). No per-row SELECT before write.</li>
- *   <li>The {@code existingMap} fetch from the old design is eliminated;
- *       upsert correctness is enforced by the DB unique constraint
- *       {@code uk_dh_asset_period (assetId, depreciationPeriod)}.</li>
- * </ul>
+ * ── Mid-month cutoff rule ────────────────────────────────────────────────────
+ *
+ *  Assets whose creationDate falls on day 1–15 of the current month are
+ *  included in the current month's depreciation run.
+ *
+ *  Assets whose creationDate falls on day 16–end of the current month are
+ *  deferred: they are skipped entirely this run and will be picked up
+ *  automatically in the following month's run (their creationDate will then
+ *  be in a prior month, so day-of-month check no longer applies).
+ *
+ *  Assets created in any prior month are always included regardless of day.
+ *
+ *  Logic in computeDepreciation():
+ *    LocalDate creation = toLocalDate(asset.getCreationDate())
+ *    if (creation.getYear()  == today.getYear()  &&
+ *        creation.getMonth() == today.getMonth() &&
+ *        creation.getDayOfMonth() > MID_MONTH_CUTOFF)   → return null (skip)
+ *
+ *    uk_dh_asset_period (assetId, depreciationPeriod).
  */
 @Component
 public class DepreciationScheduler {
@@ -77,23 +91,29 @@ public class DepreciationScheduler {
 
     private static final DateTimeFormatter PERIOD_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM");
 
+    /**
+     * Assets created on day 1–15 are included in the current month's run.
+     * Assets created on day 16 or later are deferred to the following month.
+     */
+    private static final int MID_MONTH_CUTOFF = 15;
+
     // ── Dependencies ─────────────────────────────────────────────────────────
 
-    private final FarReportService                farReportService;
-    private final PreWarmExportJob                preWarmExportJob;
+    private final FarReportService                  farReportService;
+    private final PreWarmExportJob                  preWarmExportJob;
     private final DepreciationHistoryBulkRepository depHistoryBulkRepo;
     private final FarReportBulkRepository           farReportBulkRepo;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
 
-    public DepreciationScheduler(FarReportService                farReportService,
-                                  PreWarmExportJob                preWarmExportJob,
+    public DepreciationScheduler(FarReportService                  farReportService,
+                                  PreWarmExportJob                  preWarmExportJob,
                                   DepreciationHistoryBulkRepository depHistoryBulkRepo,
                                   FarReportBulkRepository           farReportBulkRepo) {
-        this.farReportService    = farReportService;
-        this.preWarmExportJob    = preWarmExportJob;
-        this.depHistoryBulkRepo  = depHistoryBulkRepo;
-        this.farReportBulkRepo   = farReportBulkRepo;
+        this.farReportService   = farReportService;
+        this.preWarmExportJob   = preWarmExportJob;
+        this.depHistoryBulkRepo = depHistoryBulkRepo;
+        this.farReportBulkRepo  = farReportBulkRepo;
     }
 
     public boolean isRunning() {
@@ -128,11 +148,13 @@ public class DepreciationScheduler {
 
     private boolean runDepreciationBatch() {
         log.info("[DEPRECIATION] ══════════════════════════════════════════════════");
-        log.info("[DEPRECIATION] Run started  page_size={}  batch_size={}", PAGE_SIZE, BATCH_SIZE);
+        log.info("[DEPRECIATION] Run started  page_size={}  batch_size={}  mid_month_cutoff=day{}",
+                 PAGE_SIZE, BATCH_SIZE, MID_MONTH_CUTOFF);
 
         int  pageNumber     = 0;
         long totalProcessed = 0;
         long totalSkipped   = 0;
+        long totalDeferred  = 0;   // assets skipped specifically due to mid-month cutoff
         long totalBatches   = 0;
         long runStartMs     = System.currentTimeMillis();
 
@@ -145,7 +167,10 @@ public class DepreciationScheduler {
         // Single Date instance reused for all FarReport.depreciationDate writes
         Date runDate = Date.from(computedAt.atZone(RIYADH).toInstant());
 
-        log.info("[DEPRECIATION] Period={}, EndOfMonth={}", period, endOfMonth);
+        log.info("[DEPRECIATION] Period={}, EndOfMonth={}, RunDate={}",
+                 period, endOfMonth, computedAt);
+        log.info("[DEPRECIATION] Mid-month rule: assets with creationDate in {}/{} day > {} → DEFERRED",
+                 today.getYear(), today.getMonthValue(), MID_MONTH_CUTOFF);
 
         try {
             Page<FarReport> page;
@@ -168,17 +193,24 @@ public class DepreciationScheduler {
                     long            chunkStartMs = System.currentTimeMillis();
 
                     // ── Phase 1: compute in memory ────────────────────────────
-                    List<FarReport>          validAssets  = new ArrayList<>(chunk.size());
-                    List<DepreciationResult> validResults = new ArrayList<>(chunk.size());
+                    List<FarReport>          validAssets   = new ArrayList<>(chunk.size());
+                    List<DepreciationResult> validResults  = new ArrayList<>(chunk.size());
                     int chunkSkipped   = 0;
+                    int chunkDeferred  = 0;
                     int chunkProcessed = 0;
 
                     for (FarReport asset : chunk) {
                         try {
                             DepreciationResult result =
-                                    computeDepreciation(asset, period, endOfMonth, computedAt);
+                                    computeDepreciation(asset, period, endOfMonth, computedAt, today);
+
                             if (result == null) {
-                                chunkSkipped++;
+                                // Distinguish deferred (mid-month) from other skips for logging
+                                if (isDeferredThisMonth(asset, today)) {
+                                    chunkDeferred++;
+                                } else {
+                                    chunkSkipped++;
+                                }
                                 continue;
                             }
                             validAssets.add(asset);
@@ -198,12 +230,10 @@ public class DepreciationScheduler {
                             FarReport          asset  = validAssets.get(i);
                             DepreciationResult result = validResults.get(i);
                             try {
-                                // Build DepreciationHistory record (new — no pre-fetch needed)
                                 DepreciationHistory record = new DepreciationHistory();
                                 populateRecord(record, asset, result);
                                 depBatch.add(record);
 
-                                // Mutate FarReport in memory
                                 applyDepreciationToFarReport(asset, result, runDate);
                                 chunkProcessed++;
                             } catch (Exception ex) {
@@ -214,9 +244,7 @@ public class DepreciationScheduler {
                         }
 
                         // ── Phase 3: single-round-trip bulk writes ────────────
-                        // 1 DB call: INSERT ... ON DUPLICATE KEY UPDATE
                         depHistoryBulkRepo.upsertAll(depBatch);
-                        // 1 DB call: batch UPDATE (depreciation columns only)
                         farReportBulkRepo.bulkUpdateDepreciation(validAssets, runDate);
                     }
 
@@ -224,21 +252,22 @@ public class DepreciationScheduler {
                     totalBatches++;
                     totalProcessed += chunkProcessed;
                     totalSkipped   += chunkSkipped;
+                    totalDeferred  += chunkDeferred;
 
-                    log.info("[DEPRECIATION] Batch {} | size={} ok={} skip={} | {}ms",
-                             totalBatches, chunk.size(), chunkProcessed, chunkSkipped,
+                    log.info("[DEPRECIATION] Batch {} | size={} ok={} skip={} deferred={} | {}ms",
+                             totalBatches, chunk.size(), chunkProcessed, chunkSkipped, chunkDeferred,
                              System.currentTimeMillis() - chunkStartMs);
                 }
 
-                log.info("[DEPRECIATION] ── Page {} complete  batches={}  ok={}  skip={} ──",
-                         pageNumber + 1, chunkCount, totalProcessed, totalSkipped);
+                log.info("[DEPRECIATION] ── Page {} complete  batches={}  ok={}  skip={}  deferred={} ──",
+                         pageNumber + 1, chunkCount, totalProcessed, totalSkipped, totalDeferred);
                 pageNumber++;
 
             } while (page.hasNext());
 
             long elapsed = System.currentTimeMillis() - runStartMs;
-            log.info("[DEPRECIATION] Run COMPLETE  pages={}  batches={}  processed={}  skipped={}  elapsed={}ms",
-                     pageNumber, totalBatches, totalProcessed, totalSkipped, elapsed);
+            log.info("[DEPRECIATION] Run COMPLETE  pages={}  batches={}  processed={}  skipped={}  deferred={}  elapsed={}ms",
+                     pageNumber, totalBatches, totalProcessed, totalSkipped, totalDeferred, elapsed);
             return true;
 
         } catch (Exception ex) {
@@ -252,32 +281,46 @@ public class DepreciationScheduler {
     // ── Depreciation computation ─────────────────────────────────────────────
 
     /**
-     * Straight-line depreciation per spec:
+     * Straight-line depreciation per spec — ADJ removed.
      *
      * <pre>
      *  Mandatory fields  : cost (IC), life (L), datePlacedInService
      *
+     *  Step 0  Mid-month cutoff check (NEW):
+     *          If asset.creationDate is in the CURRENT run month AND
+     *          day-of-month > MID_MONTH_CUTOFF (15) → return null (deferred).
+     *          Assets created in any prior month are always included.
+     *
      *  Step 1  IC   = asset.cost                     (rounded to 3dp)
      *  Step 2  SV   = asset.salvageValue ?? 0         (rounded to 3dp)
-     *  Step 3  ADJ  = asset.depreciationReserve ?? 0  (ADJ < IC enforced)
-     *  Step 4  MD   = (IC − SV) / L                  (rounded to 3dp)
-     *  Step 5  D    = 1st of month AFTER datePlacedInService
-     *  Step 6  NoMU = months(D → endOfCurrentMonth), capped at L; skip if < 0
-     *  Step 7  AD   = MD × NoMU + ADJ                (capped at IC − SV)
-     *  Step 8  NC   = IC − AD                        (floored at SV, never < 0)
-     *  Step 9  Skip if NC already == SV (fully depreciated)
-     * </pre>
+     *  Step 3  MD   = (IC − SV) / L                  (rounded to 3dp)
+     *  Step 4  D    = 1st of month AFTER datePlacedInService
+     *  Step 5  NoMU = months(D → endOfCurrentMonth), capped at L; skip if &lt; 0
+     *  Step 6  AD   = MD × NoMU                      (capped at IC − SV)
+     *  Step 7  NC   = IC − AD                        (floored at SV, never &lt; 0)
+     *  Step 8  Skip if NC == SV (fully depreciated)
      *
-     * @param asset      the FAR record
-     * @param period     pre-formatted "yyyy-MM" string for this run
-     * @param endOfMonth last day of the current month
-     * @param computedAt timestamp for this run
-     * @return {@code null} when the asset must be skipped (missing data / fully depreciated)
+     *  depreciationReserve (DEPRN_RESERVE) is intentionally NOT used here.
+     * </pre>
      */
     private DepreciationResult computeDepreciation(FarReport     asset,
                                                     String        period,
                                                     LocalDate     endOfMonth,
-                                                    LocalDateTime computedAt) {
+                                                    LocalDateTime computedAt,
+                                                    LocalDate     today) {
+
+        // ── Step 0: mid-month cutoff — skip assets created after day 15 ──────
+        //
+        //  Rule: if the asset was created THIS calendar month and the creation
+        //  day is > MID_MONTH_CUTOFF, defer it to next month's run.
+        //  Assets created in any prior month are unaffected by this check.
+        if (isDeferredThisMonth(asset, today)) {
+            log.debug("[DEPRECIATION] Defer {} — creationDate {} is in current month after day {}",
+                      asset.getAssetId(),
+                      asset.getCreationDate() != null ? asset.getCreationDate() : "null",
+                      MID_MONTH_CUTOFF);
+            return null;
+        }
 
         // ── Guard: mandatory fields ──────────────────────────────────────────
         if (asset.getCost() == null
@@ -287,24 +330,15 @@ public class DepreciationScheduler {
             return null;
         }
 
-        // ── Step 1-3: core values (3dp precision) ───────────────────────────
-        BigDecimal ic  = bd(asset.getCost());
-        BigDecimal sv  = asset.getSalvageValue() != null ? bd(asset.getSalvageValue()) : BigDecimal.ZERO;
-        BigDecimal adj = BigDecimal.ZERO;
-
-        if (asset.getDepreciationReserve() != null) {
-            BigDecimal rawAdj = bd(asset.getDepreciationReserve());
-            if (rawAdj.compareTo(ic) < 0) {
-                adj = rawAdj;
-            } else {
-                log.warn("[DEPRECIATION] Asset {} ADJ ({}) >= IC ({}), treating ADJ=0",
-                         asset.getAssetId(), rawAdj, ic);
-            }
-        }
+        // ── Step 1-2: core values (3dp precision) ────────────────────────────
+        BigDecimal ic = bd(asset.getCost());
+        BigDecimal sv = asset.getSalvageValue() != null
+                        ? bd(asset.getSalvageValue())
+                        : BigDecimal.ZERO;
 
         int L = asset.getLife();
 
-        // ── Step 4: MD = (IC − SV) / L (3dp) ───────────────────────────────
+        // ── Step 3: MD = (IC − SV) / L (3dp) ────────────────────────────────
         BigDecimal depreciableAmount = ic.subtract(sv);
         if (depreciableAmount.compareTo(BigDecimal.ZERO) <= 0) {
             log.debug("[DEPRECIATION] Skip {} — IC ({}) <= SV ({})", asset.getAssetId(), ic, sv);
@@ -312,13 +346,12 @@ public class DepreciationScheduler {
         }
         BigDecimal md = depreciableAmount.divide(BigDecimal.valueOf(L), SCALE, ROUNDING);
 
-        // ── Step 5: D = 1st of next calendar month after Date of Service ────
-        // FIX: use explicit RIYADH zone instead of ZoneId.systemDefault()
+        // ── Step 4: D = 1st of next calendar month after Date of Service ─────
         LocalDate serviceDate = asset.getDatePlacedInService()
                 .toInstant().atZone(RIYADH).toLocalDate();
         LocalDate D = serviceDate.withDayOfMonth(1).plusMonths(1);
 
-        // ── Step 6: NoMU = months(D → endOfCurrentMonth), capped at L ───────
+        // ── Step 5: NoMU = months(D → endOfCurrentMonth), capped at L ────────
         long nomu = ChronoUnit.MONTHS.between(D, endOfMonth);
         if (nomu < 0) {
             log.debug("[DEPRECIATION] Skip {} — service date {} is in the future (D={})",
@@ -327,14 +360,14 @@ public class DepreciationScheduler {
         }
         nomu = Math.min(nomu, L);
 
-        // ── Step 7: AD = MD × NoMU + ADJ  (capped at IC − SV) ───────────────
-        BigDecimal ad    = md.multiply(BigDecimal.valueOf(nomu)).add(adj).setScale(SCALE, ROUNDING);
+        // ── Step 6: AD = MD × NoMU (capped at IC − SV, NO ADJ) ───────────────
+        BigDecimal ad    = md.multiply(BigDecimal.valueOf(nomu)).setScale(SCALE, ROUNDING);
         BigDecimal maxAD = depreciableAmount;
         if (ad.compareTo(maxAD) > 0) {
             ad = maxAD;
         }
 
-        // ── Step 8: NC = IC − AD  (floored at SV, never negative) ───────────
+        // ── Step 7: NC = IC − AD (floored at SV, never negative) ─────────────
         BigDecimal nc = ic.subtract(ad).setScale(SCALE, ROUNDING);
         if (nc.compareTo(sv) < 0) {
             nc = sv;
@@ -344,7 +377,7 @@ public class DepreciationScheduler {
             nc = BigDecimal.ZERO;
         }
 
-        // ── Step 9: Stop when fully depreciated (NC == SV) ───────────────────
+        // ── Step 8: Stop when fully depreciated (NC == SV) ───────────────────
         if (nc.compareTo(sv) == 0 && nomu >= L) {
             log.debug("[DEPRECIATION] Skip {} — fully depreciated (NC == SV == {})",
                       asset.getAssetId(), sv);
@@ -367,16 +400,36 @@ public class DepreciationScheduler {
     }
 
     /**
+     * Returns true if this asset must be deferred to the next month's run.
+     *
+     * Deferral condition:
+     *   asset.creationDate is in the same year+month as {@code today}
+     *   AND day-of-month > {@value #MID_MONTH_CUTOFF}
+     *
+     * Assets with a null creationDate are NOT deferred — they fall through
+     * to the normal mandatory-field guard in computeDepreciation().
+     */
+    private boolean isDeferredThisMonth(FarReport asset, LocalDate today) {
+        if (asset.getCreationDate() == null) {
+            return false;
+        }
+        LocalDate created = asset.getCreationDate()
+                .toInstant().atZone(RIYADH).toLocalDate();
+
+        return created.getYear()        == today.getYear()
+            && created.getMonth()       == today.getMonth()
+            && created.getDayOfMonth()  >  MID_MONTH_CUTOFF;
+    }
+
+    /**
      * Immutable value object carrying all computed fields for one asset.
-     * IC and SV are included so {@link #applyDepreciationToFarReport} can
-     * write back the 3dp-rounded values without re-reading the asset.
      */
     private record DepreciationResult(
             double        monthlyDepreciation,      // MD  (3dp)
             double        accumulatedDepreciation,  // AD  (3dp)
             double        netCost,                  // NC  (3dp)
-            double        initialCost,              // IC  (3dp) — rounded
-            double        salvageValue,             // SV  (3dp) — rounded
+            double        initialCost,              // IC  (3dp)
+            double        salvageValue,             // SV  (3dp)
             LocalDate     dateOfAssetRetirement,    // DoAR
             String        period,
             LocalDateTime computedAt
@@ -400,9 +453,7 @@ public class DepreciationScheduler {
 
     /**
      * Mutates FarReport in memory with computed depreciation values.
-     *
-     * <p>Uses the single {@code runDate} computed at the start of the run
-     * (not {@code new Date()}) so all assets in a run share the same timestamp.
+     * Uses single runDate for all assets — not new Date() per asset.
      */
     private void applyDepreciationToFarReport(FarReport          asset,
                                                DepreciationResult result,
@@ -414,7 +465,7 @@ public class DepreciationScheduler {
         asset.setAccumulatedDepreciationAmt(result.accumulatedDepreciation());
         asset.setNetCost(result.netCost());
         asset.setNbv(result.netCost());
-        asset.setDepreciationDate(runDate);  // consistent timestamp — not new Date() per asset
+        asset.setDepreciationDate(runDate);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -95,13 +95,13 @@ public class FarReportValidation {
             errors.add("Row " + rowNum + ": required fields missing — " + String.join(", ", missing));
         }
 
-        // 2. Financial checks
-        checkFinancialFields(normalized, rowNum, errors);
+        // // 2. Financial checks
+        // checkFinancialFields(normalized, rowNum, errors);
 
 
 
-        // 4. Numeric range checks
-        checkNumericFields(normalized, rowNum, errors);
+        // // 4. Numeric range checks
+        // checkNumericFields(normalized, rowNum, errors);
 
         return new ValidationResult(errors.isEmpty(), errors);
     }
@@ -111,59 +111,55 @@ public class FarReportValidation {
 
     // ── Private validators ────────────────────────────────────────────────────
 
-    private static void checkFinancialFields(Map<String, Object> row, int rowNum,
-                                             List<String> errors) {
-        try {
-            Double  cost     = toDouble(row.get("cost"));
-            Double  salvage  = toDouble(row.get("salvageValue"));
-            Integer life     = toInteger(row.get("life"));
-            Double  nbv      = toDouble(row.get("nbv"));
-            Double  deprnRsv = toDouble(row.get("depreciationReserve"));
+// private static void checkFinancialFields(Map<String, Object> row, int rowNum,
+//                                          List<String> errors) {
+//     try {
+//         Double  cost     = toDouble(row.get("cost"));
+//         Double  salvage  = toDouble(row.get("salvageValue"));
+//         Integer life     = toInteger(row.get("life"));
+//         Double  nbv      = toDouble(row.get("nbv"));
+//         Double  deprnRsv = toDouble(row.get("depreciationReserve"));
 
-            if (cost != null && cost <= 0)
-                errors.add("Row " + rowNum + ": 'cost' must be > 0");
+//         // IC must be >= 0 (spec: mandatory, cost of purchase)
+//         if (cost != null && cost < 0)
+//             errors.add("Row " + rowNum + ": 'cost' cannot be negative");
 
-            if (life != null && life <= 0)
-                errors.add("Row " + rowNum + ": 'life' must be > 0 months");
+//         // L must be >= 0 (spec: useful life in months)
+//         if (life != null && life < 0)
+//             errors.add("Row " + rowNum + ": 'life' cannot be negative");
 
-            if (salvage != null && cost != null && salvage > cost + MONETARY_TOLERANCE)
-                errors.add("Row " + rowNum + ": 'salvageValue' (" + salvage + ") cannot exceed 'cost' (" + cost + ")");
+//         // SV must be >= 0
+//         if (salvage != null && salvage < 0)
+//             errors.add("Row " + rowNum + ": 'salvageValue' cannot be negative");
+        
+//         if (nbv != null && nbv < 0)
+//             errors.add("Row " + rowNum + ": 'nbv' cannot be negative");
 
-            if (nbv != null && nbv < 0)
-                errors.add("Row " + rowNum + ": 'nbv' cannot be negative");
-
-            if (deprnRsv != null && cost != null && salvage != null) {
-                double maxAD = cost - salvage;
-                if (deprnRsv > maxAD + MONETARY_TOLERANCE)
-                    errors.add("Row " + rowNum + ": 'depreciationReserve' (" + String.format("%.3f", deprnRsv)
-                            + ") exceeds max allowed (" + String.format("%.3f", maxAD) + ")");
-            }
-
-        } catch (Exception ex) {
-            log.debug("checkFinancialFields row {}: {}", rowNum, ex.getMessage());
-        }
-    }
+//     } catch (Exception ex) {
+//         log.debug("checkFinancialFields row {}: {}", rowNum, ex.getMessage());
+//     }
+// }
 
 
 
-    private static void checkNumericFields(Map<String, Object> row, int rowNum, List<String> errors) {
-        try {
-            Integer qty = toInteger(row.get("quantity"));
-            if (qty != null && qty < 0)
-                errors.add("Row " + rowNum + ": 'quantity' cannot be negative");
+//     private static void checkNumericFields(Map<String, Object> row, int rowNum, List<String> errors) {
+//         try {
+//             Integer qty = toInteger(row.get("quantity"));
+//             if (qty != null && qty < 0)
+//                 errors.add("Row " + rowNum + ": 'quantity' cannot be negative");
 
-            Double deprnAmt = toDouble(row.get("depreciationAmount"));
-            if (deprnAmt != null && deprnAmt < 0)
-                errors.add("Row " + rowNum + ": 'depreciationAmount' cannot be negative");
+//             Double deprnAmt = toDouble(row.get("depreciationAmount"));
+//             if (deprnAmt != null && deprnAmt < 0)
+//                 errors.add("Row " + rowNum + ": 'depreciationAmount' cannot be negative");
 
-            Double deprnRsv = toDouble(row.get("depreciationReserve"));
-            if (deprnRsv != null && deprnRsv < 0)
-                errors.add("Row " + rowNum + ": 'depreciationReserve' cannot be negative");
+//             Double deprnRsv = toDouble(row.get("depreciationReserve"));
+//             if (deprnRsv != null && deprnRsv < 0)
+//                 errors.add("Row " + rowNum + ": 'depreciationReserve' cannot be negative");
 
-        } catch (Exception ex) {
-            log.debug("checkNumericFields row {}: {}", rowNum, ex.getMessage());
-        }
-    }
+//         } catch (Exception ex) {
+//             log.debug("checkNumericFields row {}: {}", rowNum, ex.getMessage());
+//         }
+//     }
 
     // ── Key normalisation ─────────────────────────────────────────────────────
 

@@ -83,6 +83,8 @@ public class AssetDepreciationDetailDTO {
     /** Original cost of asset. */
     private Double cost;
 
+   private String mapped;
+
     /** Expected salvage/residual value. */
     private Double salvageValue;
 

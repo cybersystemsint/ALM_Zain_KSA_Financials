@@ -29,10 +29,11 @@ import java.util.concurrent.Executor;
  *
  * <p><b>Endpoints:</b></p>
  * <ul>
- *   <li>POST /depreciation-history/list → Paginated list with filters</li>
- *   <li>POST /depreciation-history/export → Async export (CSV/Excel)</li>
- *   <li>POST /depreciation-history/run-depreciation → Manual scheduler trigger</li>
- *   <li>GET /depreciation-history/run-depreciation/status → Job status</li>
+ *   <li>POST /depreciation-history/listv1         → Paginated list (no summary cards)</li>
+ *   <li>POST /depreciation-history/list → Paginated list WITH aggregate summary cards</li>
+ *   <li>POST /depreciation-history/export       → Async export (CSV/Excel)</li>
+ *   <li>POST /depreciation-history/run-depreciation        → Manual scheduler trigger</li>
+ *   <li>GET  /depreciation-history/run-depreciation/status → Job status</li>
  * </ul>
  */
 @RestController
@@ -54,36 +55,24 @@ public class DepreciationHistoryController {
             DataRefreshScheduler dataRefreshScheduler,
             ExportJobService exportJobService,
             @Qualifier("schedulerExecutor") Executor schedulerExecutor) {
-        this.service              = service;
+        this.service               = service;
         this.depreciationScheduler = depreciationScheduler;
         this.dataRefreshScheduler  = dataRefreshScheduler;
         this.exportJobService      = exportJobService;
         this.schedulerExecutor     = schedulerExecutor;
     }
 
-    // ── Depreciation list & detail ────────────────────────────────────────────
+    // ── Depreciation list (no summary) ────────────────────────────────────────
 
     /**
      * Fetch paginated depreciation history with optional filters.
+     * Does NOT include aggregate summary cards — use /list-summary for that.
      *
-     * <p><b>Query parameters:</b></p>
-     * <ul>
-     *   <li>pageNumber: 0-indexed page number (default 0)</li>
-     *   <li>pageSize: records per page (default 100, max 200)</li>
-     * </ul>
-     *
-     * <p><b>Request body:</b> DynamicFilterRequest with optional filters on:
-     * <ul>
-     *   <li>columnName: field to filter (e.g., "assetId", "depreciationPeriod")</li>
-     *   <li>searchQuery: value to match</li>
-     *   <li>dateFrom / dateTo: date range filters</li>
-     * </ul>
-     *
-     * @param filter DynamicFilterRequest (optional)
-     * @param pageable pagination parameters (default: page 0, size 100)
+     * @param filter   DynamicFilterRequest (optional)
+     * @param pageable pagination parameters (default: page 0, size 100, sort recordNo DESC)
      * @return ResponseEntity with paged composite DTOs
      */
-    @PostMapping("/list")
+    @PostMapping("/listv1")
     public ResponseEntity<ApiResponse<PagedResponse<AssetDepreciationDetailDTO>>> getAll(
             @RequestBody(required = false) DynamicFilterRequest filter,
             @PageableDefault(size = 100, sort = "recordNo", direction = Sort.Direction.DESC)
@@ -93,7 +82,7 @@ public class DepreciationHistoryController {
             filter = new DynamicFilterRequest();
         }
 
-        log.info("[API] GET /depreciation-history/list  page={} size={}  filter={}",
+        log.info("[API] POST /depreciation-history/listv1  page={} size={}  filter={}",
                  pageable.getPageNumber(), pageable.getPageSize(), filter);
 
         PagedResponse<AssetDepreciationDetailDTO> response = service.findAll(filter, pageable);
@@ -109,7 +98,62 @@ public class DepreciationHistoryController {
         );
     }
 
+    // ── Depreciation list WITH summary cards ──────────────────────────────────
 
+    /**
+     * Fetch paginated depreciation history WITH aggregate summary totals.
+     *
+     * <p>Mirrors the FAR report /list endpoint. Returns both paginated
+     * data and summary cards for the frontend dashboard.</p>
+     *
+     * <p><b>Summary fields returned:</b></p>
+     * <ul>
+     *   <li>totalMonthlyDepreciation    — SUM(monthlyDepreciationAmt)    across ALL rows</li>
+     *   <li>totalAccumulatedDepr        — SUM(accumulatedDepreciationAmt) across ALL rows</li>
+     *   <li>totalNetCost                — SUM(netCost)                   across ALL rows</li>
+     *   <li>filteredMonthlyDepreciation — SUM(monthlyDepreciationAmt)    for active filters only</li>
+     *   <li>filteredAccumulatedDepr     — SUM(accumulatedDepreciationAmt) for active filters only</li>
+     *   <li>filteredNetCost             — SUM(netCost)                   for active filters only</li>
+     * </ul>
+     *
+     * <p>When no filters are active, filtered totals == grand totals and
+     * only one DB query is fired (no second full-table scan).</p>
+     *
+     * @param filter   DynamicFilterRequest (optional — null treated as no filters)
+     * @param pageable pagination parameters (default: page 0, size 100, sort recordNo DESC)
+     * @return ResponseEntity wrapping the summary map
+     */
+    @PostMapping("/list")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getAllWithSummary(
+            @RequestBody(required = false) DynamicFilterRequest filter,
+            @PageableDefault(size = 100, sort = "recordNo", direction = Sort.Direction.DESC)
+            Pageable pageable) {
+
+        if (filter == null) {
+            filter = new DynamicFilterRequest();
+        }
+
+        log.info("[API] POST /depreciation-history/list-summary  page={} size={}  filter={}",
+                 pageable.getPageNumber(), pageable.getPageSize(), filter);
+
+        Map<String, Object> response = service.findAllWithSummary(filter, pageable);
+
+        long totalRecords = response.get("totalRecords") != null
+                ? ((Number) response.get("totalRecords")).longValue()
+                : 0L;
+        int currentPage = pageable.getPageNumber() + 1;
+        int totalPages  = response.get("totalPages") != null
+                ? ((Number) response.get("totalPages")).intValue()
+                : 0;
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                    String.format("Found %d records on page %d of %d",
+                            totalRecords, currentPage, totalPages),
+                    response
+                )
+        );
+    }
 
     // ── Export ────────────────────────────────────────────────────────────────
 
@@ -122,22 +166,9 @@ public class DepreciationHistoryController {
      *   <li><b>With filters:</b> Starts fresh on-demand export, retained for configured hours</li>
      * </ul>
      *
-     * <p><b>Response:</b> Returns jobId and polling URLs.</p>
-     *
-     * <p><b>Next steps:</b></p>
-     * <ul>
-     *   <li>Poll: GET /exports/status/{jobId}</li>
-     *   <li>Download: GET /exports/download/{jobId}</li>
-     * </ul>
-     *
-     * <p><b>Query parameters:</b></p>
-     * <ul>
-     *   <li>format: EXCEL (default) or CSV</li>
-     * </ul>
-     *
      * @param filter DynamicFilterRequest (optional)
      * @param format ExportFormat (EXCEL or CSV)
-     * @return ResponseEntity with jobId and URLs
+     * @return ResponseEntity with jobId and polling/download URLs
      */
     @PostMapping("/export")
     public ResponseEntity<ApiResponse<Map<String, String>>> export(
@@ -169,17 +200,11 @@ public class DepreciationHistoryController {
                 ));
     }
 
-
     // ── Depreciation scheduler control ────────────────────────────────────────
 
     /**
      * Manually trigger depreciation processing on the scheduler executor pool.
-     *
-     * <p><b>Response:</b> HTTP 202 Accepted if triggered, 409 Conflict if already running.</p>
-     *
-     * <p><b>Monitoring:</b> Check server logs for "[DEPRECIATION]" entries to follow progress.</p>
-     *
-     * @return ResponseEntity with status
+     * Returns HTTP 202 Accepted if triggered, 409 Conflict if already running.
      */
     @PostMapping("/run-depreciation")
     public ResponseEntity<ApiResponse<String>> triggerDepreciation() {
@@ -215,11 +240,6 @@ public class DepreciationHistoryController {
 
     // ── Health check ──────────────────────────────────────────────────────────
 
-    /**
-     * Simple health check endpoint.
-     *
-     * @return ResponseEntity with health status
-     */
     @GetMapping("/health")
     public ResponseEntity<ApiResponse<String>> health() {
         return ResponseEntity.ok(

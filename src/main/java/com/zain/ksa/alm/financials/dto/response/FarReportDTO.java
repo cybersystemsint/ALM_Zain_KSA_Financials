@@ -82,6 +82,7 @@ public class FarReportDTO implements Serializable {
     private String  insertedBy;
     private String  financialApproval;
     private Date    changedDate;
+    private String mapped;
 
     // ── Getters and setters ───────────────────────────────────────────────────
 
@@ -273,4 +274,7 @@ public class FarReportDTO implements Serializable {
 
     public Date getChangedDate() { return changedDate; }
     public void setChangedDate(Date changedDate) { this.changedDate = changedDate; }
+
+    public String getMapped() { return mapped; }
+public void setMapped(String mapped) { this.mapped = mapped; }
 }
